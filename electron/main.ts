@@ -10,7 +10,7 @@ import { UGGScraper } from './services/ugg-scraper'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const LOCKFILE_PATH = 'C:\\Riot Games\\League of Legends\\lockfile'
+const LOCKFILE_PATH = 'D:\\Riot Games\\League of Legends\\lockfile'
 
 let mainWindow: BrowserWindow | null = null
 let lcuConnection: LCUConnection
@@ -20,6 +20,7 @@ let ddragon: DataDragonService
 let scraper: UGGScraper
 let isOverlayVisible = true
 let isInteractable = false
+let currentLCUStatus = { connected: false, message: 'Initializing...' }
 
 function createOverlayWindow(): BrowserWindow {
   const primaryDisplay = screen.getPrimaryDisplay()
@@ -37,7 +38,7 @@ function createOverlayWindow(): BrowserWindow {
     hasShadow: false,
     focusable: false, // Prevent stealing focus from the game
     webPreferences: {
-      preload: path.join(__dirname, '../preload/preload.js'),
+      preload: path.join(__dirname, '../preload/preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -54,11 +55,23 @@ function createOverlayWindow(): BrowserWindow {
     win.restore()
   })
 
+  // Intercept close event — hide instead of destroying so hotkeys keep working
+  win.on('close', (e) => {
+    e.preventDefault()
+    win.hide()
+    isOverlayVisible = false
+    console.log('[League Watch] Window close intercepted — hiding instead')
+  })
+
+  // Re-send current state when renderer finishes loading (avoids race condition)
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.send('lcu:status', currentLCUStatus)
+  })
+
   // Load the renderer
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL)
-    // Uncomment next line to open devtools for debugging:
-    // win.webContents.openDevTools({ mode: 'detach' })
+    win.webContents.openDevTools({ mode: 'detach' })
   } else {
     win.loadFile(path.join(__dirname, '../../dist/index.html'))
   }
@@ -126,13 +139,15 @@ async function connectToLCU() {
     const credentials = await lcuConnection.getCredentials()
     if (!credentials) {
       console.log('[League Watch] League client not running. Polling...')
-      mainWindow?.webContents.send('lcu:status', { connected: false, message: 'Waiting for League client...' })
+      currentLCUStatus = { connected: false, message: 'Waiting for League client...' }
+      mainWindow?.webContents.send('lcu:status', currentLCUStatus)
       setTimeout(connectToLCU, 5000)
       return
     }
 
     console.log(`[League Watch] LCU credentials found - port: ${credentials.port}`)
-    mainWindow?.webContents.send('lcu:status', { connected: true, message: 'Connected to League client' })
+    currentLCUStatus = { connected: true, message: 'Connected to League client' }
+    mainWindow?.webContents.send('lcu:status', currentLCUStatus)
 
     lcuApi = new LCUApi(credentials)
 
@@ -162,13 +177,14 @@ async function connectToLCU() {
     })
 
     lcuWebSocket.on('champ-select-ended', () => {
-      console.log('[League Watch] Champ select ended - keeping build data for in-game reference')
-      // Keep build data visible during the game
+      console.log('[League Watch] Champ select ended')
+      mainWindow?.webContents.send('champ-select:ended')
     })
 
     lcuWebSocket.on('disconnected', () => {
       console.log('[League Watch] LCU WebSocket disconnected. Reconnecting...')
-      mainWindow?.webContents.send('lcu:status', { connected: false, message: 'Disconnected. Reconnecting...' })
+      currentLCUStatus = { connected: false, message: 'Disconnected. Reconnecting...' }
+      mainWindow?.webContents.send('lcu:status', currentLCUStatus)
       lcuWebSocket = null
       lcuApi = null
       setTimeout(connectToLCU, 5000)
@@ -244,13 +260,13 @@ app.whenReady().then(async () => {
   connectToLCU()
 
   mainWindow.on('closed', () => {
+    // Only fires if the process is forcibly killed — close is intercepted above
     mainWindow = null
   })
 })
 
 app.on('window-all-closed', () => {
-  globalShortcut.unregisterAll()
-  app.quit()
+  // Don't quit — the window is hidden, not destroyed. App stays alive for hotkeys.
 })
 
 app.on('will-quit', () => {
