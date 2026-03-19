@@ -1,6 +1,6 @@
 import WebSocket from 'ws'
 import { EventEmitter } from 'events'
-import { LCUCredentials } from './connection'
+import { LCUCredentials, LCUConnection } from './connection'
 import { DataDragonService } from '../services/ddragon'
 
 interface ChampSelectAction {
@@ -53,6 +53,9 @@ export class LCUWebSocket extends EventEmitter {
       // Subscribe to champ select events
       // WAMP subscribe: [5, "OnJsonApiEvent_lol-champ-select_v1_session"]
       this.ws?.send(JSON.stringify([5, 'OnJsonApiEvent_lol-champ-select_v1_session']))
+
+      // Poll for an already-in-progress champ select session (handles connect-after-start)
+      this.pollCurrentSession()
     })
 
     this.ws.on('message', (rawData: WebSocket.Data) => {
@@ -77,6 +80,23 @@ export class LCUWebSocket extends EventEmitter {
     this.ws.on('error', (err) => {
       console.error('[LCU WS] Error:', err.message)
     })
+  }
+
+  private async pollCurrentSession() {
+    try {
+      const session = await LCUConnection.request(this.credentials, 'GET', '/lol-champ-select/v1/session')
+      if (session && session.localPlayerCellId !== undefined) {
+        console.log('[LCU WS] Found active champ select session via HTTP poll')
+        this.lastEmittedChampionId = 0
+        this.isInChampSelect = true
+        this.processChampSelectSession(session as ChampSelectSession)
+      } else {
+        console.log('[LCU WS] No active champ select session at connect time')
+      }
+    } catch {
+      // 404 means no session — expected outside champ select
+      console.log('[LCU WS] No active champ select session (HTTP poll 404/error)')
+    }
   }
 
   disconnect() {
@@ -111,7 +131,12 @@ export class LCUWebSocket extends EventEmitter {
       return
     }
 
-    if (eventType === 'Create' || eventType === 'Update') {
+    if (eventType === 'Create') {
+      console.log('[LCU WS] Champ select session created')
+      this.isInChampSelect = true
+      this.lastEmittedChampionId = 0 // Reset so the first hover always fires
+      this.processChampSelectSession(data)
+    } else if (eventType === 'Update') {
       this.isInChampSelect = true
       this.processChampSelectSession(data)
     }
@@ -119,6 +144,7 @@ export class LCUWebSocket extends EventEmitter {
 
   private processChampSelectSession(session: ChampSelectSession) {
     const localCellId = session.localPlayerCellId
+    console.log(`[LCU WS] Processing session — localCellId: ${localCellId}, myTeam: [${session.myTeam.map(p => `cell${p.cellId}:champ${p.championId}:intent${p.championPickIntent}`).join(', ')}]`)
 
     // Find the local player in myTeam
     const localPlayer = session.myTeam.find(
@@ -161,10 +187,16 @@ export class LCUWebSocket extends EventEmitter {
       isHover = true
     }
 
-    if (championId === 0) return // No champion selected/hovered yet
+    if (championId === 0) {
+      console.log('[LCU WS] No champion selected/hovered yet (championId=0)')
+      return
+    }
 
     // Only emit if champion changed
-    if (championId === this.lastEmittedChampionId) return
+    if (championId === this.lastEmittedChampionId) {
+      console.log(`[LCU WS] Champion unchanged (${championId}), skipping emit`)
+      return
+    }
     this.lastEmittedChampionId = championId
 
     // Map championId to champion data

@@ -1,15 +1,13 @@
 import axios from 'axios'
-import * as cheerio from 'cheerio'
 import { DataDragonService } from './ddragon'
 
 export interface BuildData {
-  name: string           // Build name / playstyle
+  name: string
   winRate: string
   pickRate: string
   games: string
   role: string
 
-  // Runes
   runes: {
     primaryTree: string
     primaryTreeId: number
@@ -19,11 +17,9 @@ export interface BuildData {
     primaryPerks: RuneInfo[]
     subPerks: RuneInfo[]
     statShards: number[]
-    // Flat array of all perk IDs for LCU push
     allPerkIds: number[]
   }
 
-  // Items
   items: {
     starting: ItemInfo[]
     core: ItemInfo[]
@@ -31,13 +27,11 @@ export interface BuildData {
     fullBuild: ItemInfo[]
   }
 
-  // Skills
   skills: {
-    order: string[]        // e.g. ["Q", "E", "W"]
-    levelOrder: string[]   // Level-by-level: ["Q", "W", "E", "Q", ...]
+    order: string[]
+    levelOrder: string[]
   }
 
-  // Summoner Spells
   summonerSpells: SpellInfo[]
 }
 
@@ -59,383 +53,239 @@ export interface SpellInfo {
   icon: string
 }
 
-/**
- * u.gg role mapping for their URL format
- */
-const UGG_ROLES: Record<string, string> = {
-  'top': 'top',
-  'jungle': 'jungle',
-  'mid': 'mid',
-  'adc': 'adc',
-  'support': 'support',
+// u.gg role codes used in their API
+const UGG_ROLE_CODES: Record<string, string> = {
+  'jungle':  '1',
+  'support': '2',
+  'adc':     '3',
+  'top':     '4',
+  'mid':     '5',
 }
+
+// Region: World (12) covers all regions — most data
+const DEFAULT_REGION = '12'
+
+// Rank fallback order: Plat+ → Overall → Emerald+ → ... → Iron
+const RANK_FALLBACK = ['10', '8', '17', '11', '14', '13', '16', '4', '5', '6', '7', '12', '15']
 
 export class UGGScraper {
   private ddragon: DataDragonService
   private cache: Map<string, { builds: BuildData[]; timestamp: number }> = new Map()
-  private cacheTTL = 10 * 60 * 1000 // 10 minutes
+  private readonly cacheTTL = 10 * 60 * 1000 // 10 minutes
+
+  // Metadata fetched once per session
+  private currentPatch: string | null = null
+  private apiVersion: string | null = null
 
   constructor(ddragon: DataDragonService) {
     this.ddragon = ddragon
   }
 
   /**
+   * Fetch and cache the current u.gg patch and API version.
+   * This is called once before the first build request.
+   */
+  private async fetchMeta(): Promise<void> {
+    if (this.currentPatch && this.apiVersion) return
+
+    try {
+      const [patchesRes, versionsRes] = await Promise.all([
+        axios.get('https://static.bigbrain.gg/assets/lol/riot_patch_update/prod/ugg/patches.json', { timeout: 8000 }),
+        axios.get('https://static.bigbrain.gg/assets/lol/riot_patch_update/prod/ugg/ugg-api-versions.json', { timeout: 8000 }),
+      ])
+
+      this.currentPatch = patchesRes.data[0] as string
+      const versions = versionsRes.data
+      this.apiVersion = versions[this.currentPatch]?.overview || '1.5.0'
+
+      console.log(`[Scraper] u.gg meta: patch=${this.currentPatch}, apiVersion=${this.apiVersion}`)
+    } catch (err: any) {
+      console.error('[Scraper] Failed to fetch u.gg meta, using derived defaults:', err.message)
+      // Derive patch from DDragon version: "16.6.1" → "16_6"
+      const ddragonVersion = this.ddragon.getCurrentVersion()
+      this.currentPatch = ddragonVersion.replace(/\.\d+$/, '').replace('.', '_')
+      this.apiVersion = '1.5.0'
+      console.log(`[Scraper] Fallback: patch=${this.currentPatch}, apiVersion=${this.apiVersion}`)
+    }
+  }
+
+  /**
    * Get builds for a champion in a specific role.
-   * Returns multiple builds sorted by popularity (most popular first).
    */
   async getBuilds(championSlug: string, role: string): Promise<BuildData[]> {
     const cacheKey = `${championSlug}-${role}`
     const cached = this.cache.get(cacheKey)
-
     if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
       console.log(`[Scraper] Cache hit: ${cacheKey}`)
       return cached.builds
     }
 
-    console.log(`[Scraper] Fetching builds for ${championSlug} (${role})`)
+    await this.fetchMeta()
 
-    const uggRole = UGG_ROLES[role] || 'mid'
-    const url = `https://u.gg/lol/champions/${championSlug}/build/${uggRole}`
+    // Resolve champion numeric key from DDragon (e.g. "103" for Ahri)
+    const champion = this.ddragon.getChampionBySlug(championSlug)
+    if (!champion) {
+      console.error(`[Scraper] Unknown champion slug: ${championSlug}`)
+      return this.getFallbackBuild(role)
+    }
+
+    const champKey = champion.key
+    const roleCode = UGG_ROLE_CODES[role] || '5'
+
+    const url = `https://stats2.u.gg/lol/1.5/overview/${this.currentPatch}/ranked_solo_5x5/${champKey}/${this.apiVersion}.json`
+    console.log(`[Scraper] Fetching: ${url}`)
 
     try {
-      const response = await axios.get(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-        },
-        timeout: 10000,
-      })
+      const response = await axios.get(url, { timeout: 10000 })
+      const rawData = response.data
 
-      const builds = this.parseBuilds(response.data, championSlug, role)
+      const buildArray = this.findBuildArray(rawData, roleCode)
+      if (!buildArray) {
+        console.error(`[Scraper] No build data found for ${champion.name} (${role}) in API response`)
+        return this.getFallbackBuild(role)
+      }
 
-      // Cache the result
+      const build = this.parseBuildArray(buildArray, role)
+      console.log(`[Scraper] Parsed build for ${champion.name}: WR=${build.winRate}, games=${build.games}, keystone=${build.runes.keystone.name}`)
+
+      const builds = [build]
       this.cache.set(cacheKey, { builds, timestamp: Date.now() })
-
       return builds
     } catch (err: any) {
-      console.error(`[Scraper] Failed to fetch from u.gg: ${err.message}`)
-      // Return fallback/empty builds
-      return this.getFallbackBuild(championSlug, role)
+      console.error(`[Scraper] API request failed: ${err.message}`)
+      return this.getFallbackBuild(role)
     }
   }
 
   /**
-   * Parse the u.gg page HTML to extract build data.
-   * u.gg server-side renders build data, so Cheerio can parse it.
+   * Walk through region → rank → role to find build data.
+   * Returns the inner buildDataArray (13-element array).
    */
-  private parseBuilds(html: string, championSlug: string, role: string): BuildData[] {
-    const $ = cheerio.load(html)
-    const builds: BuildData[] = []
-
-    try {
-      // Try to extract the recommended/primary build
-      const primaryBuild = this.extractPrimaryBuild($, championSlug, role)
-      if (primaryBuild) {
-        builds.push(primaryBuild)
+  private findBuildArray(data: any, roleCode: string): any[] | null {
+    for (const region of [DEFAULT_REGION, '1', '2', '3']) {
+      if (!data[region]) continue
+      for (const rank of RANK_FALLBACK) {
+        const roleEntry = data[region]?.[rank]?.[roleCode]
+        if (!roleEntry) continue
+        // roleEntry = [buildDataArray, timestamp]
+        const buildDataArray = Array.isArray(roleEntry) ? roleEntry[0] : null
+        if (buildDataArray && Array.isArray(buildDataArray) && buildDataArray.length > 6) {
+          return buildDataArray
+        }
       }
-    } catch (err) {
-      console.error('[Scraper] Error parsing primary build:', err)
     }
-
-    // If we couldn't parse any builds from the page, return fallback
-    if (builds.length === 0) {
-      return this.getFallbackBuild(championSlug, role)
-    }
-
-    return builds
+    return null
   }
 
   /**
-   * Extract the primary/most popular build from u.gg page.
+   * Parse the 13-element buildDataArray from u.gg into our BuildData shape.
+   *
+   * Index map:
+   *   [0] runes:          [wins, matches, primaryStyleId, subStyleId, [runeId×6]]
+   *   [1] summonerSpells: [wins, matches, [spellId, spellId]]
+   *   [2] startingItems:  [wins, matches, [itemId, ...]]
+   *   [3] coreItems:      [wins, matches, [itemId, itemId, itemId]]
+   *   [4] abilities:      [wins, matches, [levelOrder×18], "QWE"]
+   *   [5] lateItems:      [[slot4 options], [slot5 options], [slot6 options], ...]
+   *   [6] overall:        [wins, totalMatches]
+   *   [8] statShards:     [wins, matches, ["5005","5008","5011"]]
    */
-  private extractPrimaryBuild($: cheerio.CheerioAPI, championSlug: string, role: string): BuildData | null {
-    // u.gg embeds build data in their page structure
-    // We'll look for the key data sections
+  private parseBuildArray(entry: any[], role: string): BuildData {
+    const runesRaw   = entry[0] || []
+    const spellsRaw  = entry[1] || []
+    const startRaw   = entry[2] || []
+    const coreRaw    = entry[3] || []
+    const abilitiesRaw = entry[4] || []
+    const overallRaw = entry[6] || []
+    const shardsRaw  = entry[8] || []
 
-    // Extract rune data from the rune recommendation section
-    const runeData = this.extractRunes($)
-    const itemData = this.extractItems($)
-    const skillData = this.extractSkills($)
-    const spellData = this.extractSummonerSpells($)
-    const statsData = this.extractStats($)
+    // Win rate
+    const wins = overallRaw[0] ?? 0
+    const total = overallRaw[1] ?? 0
+    const winRate = total > 0 ? `${((wins / total) * 100).toFixed(1)}%` : 'N/A'
+    const games   = total > 0 ? total.toLocaleString() : 'N/A'
 
-    if (!runeData && !itemData) {
-      return null
+    // Runes
+    const primaryStyleId: number = runesRaw[2] ?? 0
+    const subStyleId: number     = runesRaw[3] ?? 0
+    const runeIds: number[]      = runesRaw[4] ?? []
+
+    const primaryTreeInfo = this.ddragon.getRuneById(primaryStyleId)
+    const subTreeInfo     = this.ddragon.getRuneById(subStyleId)
+
+    // Stat shards — u.gg returns them as strings ("5005"), convert to numbers
+    const shardIds: number[] = (shardsRaw[2] ?? []).map((s: string | number) => parseInt(String(s), 10))
+
+    const allPerkIds = [...runeIds, ...shardIds]
+
+    const runes: BuildData['runes'] = {
+      primaryTree:   primaryTreeInfo?.name ?? '',
+      primaryTreeId: primaryStyleId,
+      subTree:       subTreeInfo?.name ?? '',
+      subTreeId:     subStyleId,
+      keystone:      this.runeIdToInfo(runeIds[0]),
+      primaryPerks:  runeIds.slice(1, 4).map(id => this.runeIdToInfo(id)),
+      subPerks:      runeIds.slice(4, 6).map(id => this.runeIdToInfo(id)),
+      statShards:    shardIds,
+      allPerkIds,
     }
+
+    // Items
+    const startingIds: number[] = startRaw[2] ?? []
+    const coreIds: number[]     = coreRaw[2] ?? []
+
+    let boots: ItemInfo | null = null
+    const starting = startingIds.map(id => this.itemIdToInfo(id)).filter(Boolean) as ItemInfo[]
+    const coreAll  = coreIds.map(id => this.itemIdToInfo(id)).filter(Boolean) as ItemInfo[]
+
+    const core = coreAll.filter(item => {
+      if (this.ddragon.getItem(item.id)?.name.toLowerCase().includes('boots')) {
+        boots = item
+        return false
+      }
+      return true
+    })
+
+    const items: BuildData['items'] = {
+      starting,
+      core,
+      boots,
+      fullBuild: coreAll,
+    }
+
+    // Skills — abilitiesRaw[2] is the level-by-level array, abilitiesRaw[3] is the max order string
+    const levelOrder: string[] = abilitiesRaw[2] ?? []
+    const maxOrderStr: string  = abilitiesRaw[3] ?? ''
+    const skillOrder = maxOrderStr ? maxOrderStr.split('') : []
+
+    const skills: BuildData['skills'] = {
+      order: skillOrder,
+      levelOrder,
+    }
+
+    // Summoner spells
+    const spellIds: number[] = spellsRaw[2] ?? []
+    const summonerSpells: SpellInfo[] = spellIds
+      .map(id => {
+        const spell = this.ddragon.getSummonerSpell(id)
+        return spell ? {
+          id,
+          name: spell.name,
+          icon: this.ddragon.getAssetUrl('spell', spell.image.full),
+        } : null
+      })
+      .filter(Boolean) as SpellInfo[]
 
     return {
       name: 'Most Popular',
-      winRate: statsData?.winRate || 'N/A',
-      pickRate: statsData?.pickRate || 'N/A',
-      games: statsData?.games || 'N/A',
+      winRate,
+      pickRate: 'N/A',
+      games,
       role,
-      runes: runeData || {
-        primaryTree: 'Unknown',
-        primaryTreeId: 0,
-        subTree: 'Unknown',
-        subTreeId: 0,
-        keystone: { id: 0, name: 'Unknown', icon: '' },
-        primaryPerks: [],
-        subPerks: [],
-        statShards: [],
-        allPerkIds: [],
-      },
-      items: itemData || {
-        starting: [],
-        core: [],
-        boots: null,
-        fullBuild: [],
-      },
-      skills: skillData || {
-        order: ['Q', 'W', 'E'],
-        levelOrder: [],
-      },
-      summonerSpells: spellData || [],
-    }
-  }
-
-  /**
-   * Extract rune information from the page.
-   */
-  private extractRunes($: cheerio.CheerioAPI): BuildData['runes'] | null {
-    try {
-      const runeIds: number[] = []
-
-      // u.gg uses specific CSS classes for rune selections
-      // Look for active/selected runes in the rune tree display
-      $('[class*="rune-tree"] [class*="active"], [class*="perk-active"], .perk-active').each((_i, el) => {
-        const img = $(el).find('img').first()
-        const src = img.attr('src') || ''
-        // Try to extract rune ID from the image path or data attributes
-        const dataId = $(el).attr('data-id') || $(el).attr('data-perk-id')
-        if (dataId) {
-          runeIds.push(parseInt(dataId, 10))
-        }
-      })
-
-      // Also try to find runes via image alt text or title
-      if (runeIds.length === 0) {
-        $('img[alt]').each((_i, el) => {
-          const alt = $(el).attr('alt') || ''
-          // Match against known rune names from DDragon
-          const runeData = this.findRuneByName(alt)
-          if (runeData) {
-            runeIds.push(runeData.id)
-          }
-        })
-      }
-
-      if (runeIds.length < 4) return null
-
-      // Determine primary and secondary trees
-      const keystone = runeIds[0]
-      const keystoneInfo = this.ddragon.getRuneById(keystone)
-
-      let primaryTreeId = 0
-      let primaryTreeName = ''
-      let subTreeId = 0
-      let subTreeName = ''
-
-      if (keystoneInfo) {
-        const trees = this.ddragon.getRuneTrees()
-        for (const tree of trees) {
-          if (tree.name === keystoneInfo.treeName) {
-            primaryTreeId = tree.id
-            primaryTreeName = tree.name
-            break
-          }
-        }
-      }
-
-      // Find secondary tree from sub perks
-      for (let i = 4; i < Math.min(runeIds.length, 7); i++) {
-        const runeInfo = this.ddragon.getRuneById(runeIds[i])
-        if (runeInfo && runeInfo.treeName !== primaryTreeName) {
-          subTreeName = runeInfo.treeName
-          const trees = this.ddragon.getRuneTrees()
-          for (const tree of trees) {
-            if (tree.name === subTreeName) {
-              subTreeId = tree.id
-              break
-            }
-          }
-          break
-        }
-      }
-
-      return {
-        primaryTree: primaryTreeName,
-        primaryTreeId,
-        subTree: subTreeName,
-        subTreeId,
-        keystone: this.runeIdToInfo(keystone),
-        primaryPerks: runeIds.slice(1, 4).map(id => this.runeIdToInfo(id)),
-        subPerks: runeIds.slice(4, 6).map(id => this.runeIdToInfo(id)),
-        statShards: runeIds.slice(6, 9),
-        allPerkIds: runeIds,
-      }
-    } catch {
-      return null
-    }
-  }
-
-  /**
-   * Extract item builds from the page.
-   */
-  private extractItems($: cheerio.CheerioAPI): BuildData['items'] | null {
-    try {
-      const starting: ItemInfo[] = []
-      const core: ItemInfo[] = []
-      const fullBuild: ItemInfo[] = []
-
-      // u.gg displays items in sections - starting, core, full build
-      // Look for item images within build sections
-      $('[class*="starting-items"] img, [class*="item-build"] img').each((_i, el) => {
-        const src = $(el).attr('src') || ''
-        const itemIdMatch = src.match(/\/(\d+)\.png/)
-        if (itemIdMatch) {
-          const itemId = parseInt(itemIdMatch[1], 10)
-          const itemData = this.ddragon.getItem(itemId)
-          if (itemData) {
-            const info: ItemInfo = {
-              id: itemId,
-              name: itemData.name,
-              icon: this.ddragon.getAssetUrl('item', `${itemId}`),
-            }
-            // Categorize based on gold cost
-            if (itemData.gold.total < 800) {
-              starting.push(info)
-            } else {
-              core.push(info)
-            }
-          }
-        }
-      })
-
-      if (core.length === 0 && starting.length === 0) return null
-
-      return {
-        starting,
-        core: core.slice(0, 4),
-        boots: null,
-        fullBuild: core,
-      }
-    } catch {
-      return null
-    }
-  }
-
-  /**
-   * Extract skill max order from the page.
-   */
-  private extractSkills($: cheerio.CheerioAPI): BuildData['skills'] | null {
-    try {
-      const skillOrder: string[] = []
-
-      // u.gg displays skill order as Q > E > W etc.
-      $('[class*="skill-order"] [class*="skill-label"], [class*="skill-priority"] span').each((_i, el) => {
-        const text = $(el).text().trim().toUpperCase()
-        if (['Q', 'W', 'E', 'R'].includes(text) && text !== 'R') {
-          skillOrder.push(text)
-        }
-      })
-
-      if (skillOrder.length >= 3) {
-        return {
-          order: skillOrder.slice(0, 3),
-          levelOrder: [],
-        }
-      }
-
-      return null
-    } catch {
-      return null
-    }
-  }
-
-  /**
-   * Extract summoner spells from the page.
-   */
-  private extractSummonerSpells($: cheerio.CheerioAPI): SpellInfo[] {
-    try {
-      const spells: SpellInfo[] = []
-
-      $('[class*="summoner-spell"] img, [class*="spell-icon"] img').each((_i, el) => {
-        const src = $(el).attr('src') || ''
-        const alt = $(el).attr('alt') || ''
-        // Try to match spell by name or image
-        const spellName = alt.toLowerCase()
-        const spellMap: Record<string, number> = {
-          'flash': 4,
-          'ignite': 14,
-          'teleport': 12,
-          'heal': 7,
-          'barrier': 21,
-          'exhaust': 3,
-          'ghost': 6,
-          'cleanse': 1,
-          'smite': 11,
-        }
-
-        for (const [name, id] of Object.entries(spellMap)) {
-          if (spellName.includes(name)) {
-            const spellData = this.ddragon.getSummonerSpell(id)
-            if (spellData) {
-              spells.push({
-                id,
-                name: spellData.name,
-                icon: this.ddragon.getAssetUrl('spell', spellData.image.full),
-              })
-            }
-            break
-          }
-        }
-      })
-
-      return spells
-    } catch {
-      return []
-    }
-  }
-
-  /**
-   * Extract win rate, pick rate, games from the stats section.
-   */
-  private extractStats($: cheerio.CheerioAPI): { winRate: string; pickRate: string; games: string } | null {
-    try {
-      const stats = {
-        winRate: '',
-        pickRate: '',
-        games: '',
-      }
-
-      // Look for win rate percentage
-      $('[class*="win-rate"], [class*="winrate"]').each((_i, el) => {
-        const text = $(el).text().trim()
-        if (text.includes('%') && !stats.winRate) {
-          stats.winRate = text
-        }
-      })
-
-      $('[class*="pick-rate"], [class*="pickrate"]').each((_i, el) => {
-        const text = $(el).text().trim()
-        if (text.includes('%') && !stats.pickRate) {
-          stats.pickRate = text
-        }
-      })
-
-      $('[class*="games"], [class*="matches"]').each((_i, el) => {
-        const text = $(el).text().trim()
-        if (/\d/.test(text) && !stats.games) {
-          stats.games = text
-        }
-      })
-
-      if (stats.winRate || stats.pickRate) return stats
-      return null
-    } catch {
-      return null
+      runes,
+      items,
+      skills,
+      summonerSpells,
     }
   }
 
@@ -445,57 +295,48 @@ export class UGGScraper {
     const rune = this.ddragon.getRuneById(id)
     return {
       id,
-      name: rune?.name || 'Unknown',
-      icon: rune ? this.ddragon.getAssetUrl('rune', rune.icon) : '',
+      name:  rune?.name ?? 'Unknown',
+      icon:  rune ? this.ddragon.getAssetUrl('rune', rune.icon) : '',
     }
   }
 
-  private findRuneByName(name: string): { id: number } | null {
-    const trees = this.ddragon.getRuneTrees()
-    for (const tree of trees) {
-      if (tree.name.toLowerCase() === name.toLowerCase()) return { id: tree.id }
-      if (tree.slots) {
-        for (const slot of tree.slots) {
-          for (const rune of slot.runes) {
-            if (rune.name.toLowerCase() === name.toLowerCase()) return { id: rune.id }
-          }
-        }
-      }
+  private itemIdToInfo(id: number): ItemInfo | null {
+    const item = this.ddragon.getItem(id)
+    if (!item) return null
+    return {
+      id,
+      name: item.name,
+      icon: this.ddragon.getAssetUrl('item', `${id}`),
     }
-    return null
   }
 
-  /**
-   * Return a basic fallback build when scraping fails.
-   * This uses common/safe defaults so the UI always has something to display.
-   */
-  private getFallbackBuild(championSlug: string, role: string): BuildData[] {
-    console.warn(`[Scraper] Using fallback build for ${championSlug}`)
+  private getFallbackBuild(role: string): BuildData[] {
+    console.warn('[Scraper] Returning empty fallback build (API unavailable)')
     return [{
-      name: 'Default Build',
-      winRate: 'N/A',
+      name:     'Unavailable',
+      winRate:  'N/A',
       pickRate: 'N/A',
-      games: 'N/A',
+      games:    'N/A',
       role,
       runes: {
-        primaryTree: 'Precision',
-        primaryTreeId: 8000,
-        subTree: 'Domination',
-        subTreeId: 8100,
-        keystone: { id: 8005, name: 'Press the Attack', icon: '' },
-        primaryPerks: [],
-        subPerks: [],
-        statShards: [],
-        allPerkIds: [8005],
+        primaryTree:   '',
+        primaryTreeId: 0,
+        subTree:       '',
+        subTreeId:     0,
+        keystone:    { id: 0, name: 'N/A', icon: '' },
+        primaryPerks:  [],
+        subPerks:      [],
+        statShards:    [],
+        allPerkIds:    [],
       },
       items: {
-        starting: [],
-        core: [],
-        boots: null,
+        starting:  [],
+        core:      [],
+        boots:     null,
         fullBuild: [],
       },
       skills: {
-        order: ['Q', 'W', 'E'],
+        order:      [],
         levelOrder: [],
       },
       summonerSpells: [],
