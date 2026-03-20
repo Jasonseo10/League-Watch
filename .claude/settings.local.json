@@ -2,7 +2,20 @@
   "permissions": {
     "allow": [
       "Bash(npm install:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "WebSearch",
+      "WebFetch(domain:miscellaneousstuff.github.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:u.gg)",
+      "WebFetch(domain:kade-robertson.github.io)",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:static.bigbrain.gg)",
+      "WebFetch(domain:stats2.u.gg)",
+      "Bash(npm run:*)",
+      "Bash(curl -s \"https://static.bigbrain.gg/assets/lol/riot_patch_update/prod/ugg/patches.json\")",
+      "Bash(node -e \":*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

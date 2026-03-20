@@ -5,7 +5,7 @@ import { LCUConnection } from './lcu/connection'
 import { LCUWebSocket } from './lcu/websocket'
 import { LCUApi } from './lcu/api'
 import { DataDragonService } from './services/ddragon'
-import { UGGScraper } from './services/ugg-scraper'
+import { UGGScraper, RANK_OPTIONS } from './services/ugg-scraper'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -157,6 +157,7 @@ async function connectToLCU() {
       championId: number
       championName: string
       championSlug: string
+      championDDragonId: string
       role: string
       isHover: boolean
     }) => {
@@ -164,11 +165,14 @@ async function connectToLCU() {
       mainWindow?.webContents.send('champ-select:champion', data)
 
       try {
-        const builds = await scraper.getBuilds(data.championSlug, data.role)
-        console.log(`[League Watch] → Fetched ${builds.length} build(s) for ${data.championName}`)
+        const allBuilds = await scraper.getAllRoleBuilds(data.championSlug)
+        console.log(`[League Watch] → Fetched builds for ${data.championName}: roles=[${allBuilds.availableRoles.join(', ')}], default=${allBuilds.defaultRole}`)
         mainWindow?.webContents.send('champ-select:builds', {
-          champion: data,
-          builds,
+          champion: { ...data, role: allBuilds.defaultRole },
+          buildsByRole: allBuilds.buildsByRole,
+          defaultRole: allBuilds.defaultRole,
+          availableRoles: allBuilds.availableRoles,
+          rank: allBuilds.rank,
         })
       } catch (err) {
         console.error('[League Watch] Failed to fetch builds:', err)
@@ -238,6 +242,26 @@ function setupIPC() {
       mainWindow.setIgnoreMouseEvents(true, { forward: true })
       mainWindow.setFocusable(false)
     }
+  })
+
+  ipcMain.handle('builds:request-rank-change', async (_event, championSlug: string, rank: string) => {
+    try {
+      const allBuilds = await scraper.getAllRoleBuilds(championSlug, rank)
+      console.log(`[League Watch] Rank change → ${rank} for ${championSlug}: roles=[${allBuilds.availableRoles.join(', ')}]`)
+      mainWindow?.webContents.send('champ-select:builds', {
+        champion: { championId: 0, championName: '', championSlug, role: allBuilds.defaultRole },
+        buildsByRole: allBuilds.buildsByRole,
+        defaultRole: allBuilds.defaultRole,
+        availableRoles: allBuilds.availableRoles,
+        rank: allBuilds.rank,
+      })
+    } catch (err) {
+      console.error('[League Watch] Rank change failed:', err)
+    }
+  })
+
+  ipcMain.handle('builds:get-rank-options', () => {
+    return RANK_OPTIONS.map(r => ({ label: r.label, code: r.code }))
   })
 
   ipcMain.handle('ddragon:version', () => {

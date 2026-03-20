@@ -50,9 +50,9 @@ export class LCUWebSocket extends EventEmitter {
 
     this.ws.on('open', () => {
       console.log('[LCU WS] Connected')
-      // Subscribe to champ select events
-      // WAMP subscribe: [5, "OnJsonApiEvent_lol-champ-select_v1_session"]
-      this.ws?.send(JSON.stringify([5, 'OnJsonApiEvent_lol-champ-select_v1_session']))
+      // Subscribe to ALL JSON API events — specific topic subscriptions
+      // are unreliable across LCU versions. We filter in handleMessage().
+      this.ws?.send(JSON.stringify([5, 'OnJsonApiEvent']))
 
       // Poll for an already-in-progress champ select session (handles connect-after-start)
       this.pollCurrentSession()
@@ -107,14 +107,14 @@ export class LCUWebSocket extends EventEmitter {
   }
 
   private handleMessage(message: any) {
-    // WAMP event format: [8, "OnJsonApiEvent_...", { data, eventType, uri }]
+    // WAMP event format: [8, "OnJsonApiEvent", { data, eventType, uri }]
     if (!Array.isArray(message) || message.length < 3) return
     if (message[0] !== 8) return
 
-    const eventName = message[1]
     const payload = message[2]
+    const uri: string = payload?.uri ?? ''
 
-    if (eventName === 'OnJsonApiEvent_lol-champ-select_v1_session') {
+    if (uri === '/lol-champ-select/v1/session') {
       this.handleChampSelectEvent(payload)
     }
   }
@@ -215,6 +215,7 @@ export class LCUWebSocket extends EventEmitter {
       championId,
       championName: championData.name,
       championSlug: championData.slug,
+      championDDragonId: championData.id,
       role,
       isHover,
     })

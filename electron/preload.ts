@@ -18,6 +18,10 @@ export interface LeagueWatchAPI {
   pushItems: (items: any) => Promise<{ success: boolean; error?: string }>
   pushSpells: (spells: any) => Promise<{ success: boolean; error?: string }>
 
+  // Role/rank
+  requestRankChange: (championSlug: string, rank: string) => Promise<void>
+  getRankOptions: () => Promise<{ label: string; code: string }[]>
+
   // Data Dragon
   getDDragonVersion: () => Promise<string>
   getAssetUrl: (type: string, key: string) => Promise<string>
@@ -56,6 +60,10 @@ contextBridge.exposeInMainWorld('leagueWatch', {
   pushRunes: (runes: any) => ipcRenderer.invoke('lcu:push-runes', runes),
   pushItems: (items: any) => ipcRenderer.invoke('lcu:push-items', items),
   pushSpells: (spells: any) => ipcRenderer.invoke('lcu:push-spells', spells),
+
+  // Role/rank
+  requestRankChange: (championSlug: string, rank: string) => ipcRenderer.invoke('builds:request-rank-change', championSlug, rank),
+  getRankOptions: () => ipcRenderer.invoke('builds:get-rank-options'),
 
   // Data Dragon
   getDDragonVersion: () => ipcRenderer.invoke('ddragon:version'),

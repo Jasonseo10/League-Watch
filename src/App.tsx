@@ -8,9 +8,15 @@ function App() {
     lcuStatus,
     champion,
     builds,
+    availableRoles,
+    selectedRole,
+    selectedRank,
+    rankOptions,
     isLoading,
     error,
     isInteractable,
+    changeRole,
+    changeRank,
     pushRunes,
     pushItems,
     pushSpells,
@@ -64,19 +70,19 @@ function App() {
   }
 
   // Loading builds for a new champion
-  if (isLoading && champion) {
+  if (isLoading && champion && !builds) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center p-6">
         <div className="bg-lol-dark/95 backdrop-blur-md rounded-xl border border-lol-gold/20 p-6 w-full max-w-sm">
           <div className="text-center">
             <img
-              src={`https://ddragon.leagueoflegends.com/cdn/${ddragonVersion}/img/champion/${champion.championSlug.charAt(0).toUpperCase() + champion.championSlug.slice(1)}.png`}
+              src={`https://ddragon.leagueoflegends.com/cdn/${ddragonVersion}/img/champion/${champion.championDDragonId}.png`}
               alt={champion.championName}
               className="w-16 h-16 rounded-lg border border-lol-gold/30 mx-auto mb-3"
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
             />
             <h1 className="text-lol-gold text-lg font-bold">{champion.championName}</h1>
-            <p className="text-lol-light text-sm capitalize">{champion.role}</p>
+            <p className="text-lol-light text-sm capitalize">{selectedRole || champion.role}</p>
             <div className="mt-4 flex justify-center">
               <div className="w-8 h-8 border-2 border-lol-gold border-t-transparent rounded-full animate-spin" />
             </div>
@@ -102,7 +108,7 @@ function App() {
   }
 
   // Show builds
-  if (builds) {
+  if (builds && champion) {
     return (
       <div className="w-full h-full p-2 relative">
         {/* Interactable mode indicator */}
@@ -112,12 +118,19 @@ function App() {
           </div>
         )}
         <BuildCard
-          champion={builds.champion}
-          builds={builds.builds}
+          champion={{ ...champion, role: selectedRole }}
+          builds={builds}
+          availableRoles={availableRoles}
+          selectedRole={selectedRole}
+          selectedRank={selectedRank}
+          rankOptions={rankOptions}
+          onRoleChange={changeRole}
+          onRankChange={changeRank}
           onPushRunes={pushRunes}
           onPushItems={pushItems}
           onPushSpells={pushSpells}
           ddragonVersion={ddragonVersion}
+          isLoading={isLoading}
         />
       </div>
     )

@@ -53,6 +53,13 @@ export interface SpellInfo {
   icon: string
 }
 
+export interface AllRoleBuilds {
+  buildsByRole: Record<string, BuildData[]>
+  defaultRole: string
+  availableRoles: string[]
+  rank: string
+}
+
 // u.gg role codes used in their API
 const UGG_ROLE_CODES: Record<string, string> = {
   'jungle':  '1',
@@ -65,12 +72,30 @@ const UGG_ROLE_CODES: Record<string, string> = {
 // Region: World (12) covers all regions — most data
 const DEFAULT_REGION = '12'
 
-// Rank fallback order: Plat+ → Overall → Emerald+ → ... → Iron
+// Rank fallback order when requested rank has no data
 const RANK_FALLBACK = ['10', '8', '17', '11', '14', '13', '16', '4', '5', '6', '7', '12', '15']
+
+// Rank options exposed to the UI
+export const RANK_OPTIONS = [
+  { label: 'Emerald+',     code: '17' },
+  { label: 'Platinum+',    code: '10' },
+  { label: 'Diamond+',     code: '11' },
+  { label: 'Master+',      code: '12' },
+  { label: 'All Ranks',    code: '8'  },
+  { label: 'Gold',         code: '4'  },
+  { label: 'Platinum',     code: '5'  },
+  { label: 'Emerald',      code: '16' },
+  { label: 'Diamond',      code: '6'  },
+  { label: 'Master',       code: '7'  },
+  { label: 'Grandmaster',  code: '13' },
+  { label: 'Challenger',   code: '14' },
+] as const
+
+const DEFAULT_RANK = '17' // Emerald+
 
 export class UGGScraper {
   private ddragon: DataDragonService
-  private cache: Map<string, { builds: BuildData[]; timestamp: number }> = new Map()
+  private rawCache: Map<string, { data: any; timestamp: number }> = new Map()
   private readonly cacheTTL = 10 * 60 * 1000 // 10 minutes
 
   // Metadata fetched once per session
@@ -83,7 +108,6 @@ export class UGGScraper {
 
   /**
    * Fetch and cache the current u.gg patch and API version.
-   * This is called once before the first build request.
    */
   private async fetchMeta(): Promise<void> {
     if (this.currentPatch && this.apiVersion) return
@@ -101,7 +125,6 @@ export class UGGScraper {
       console.log(`[Scraper] u.gg meta: patch=${this.currentPatch}, apiVersion=${this.apiVersion}`)
     } catch (err: any) {
       console.error('[Scraper] Failed to fetch u.gg meta, using derived defaults:', err.message)
-      // Derive patch from DDragon version: "16.6.1" → "16_6"
       const ddragonVersion = this.ddragon.getCurrentVersion()
       this.currentPatch = ddragonVersion.replace(/\.\d+$/, '').replace('.', '_')
       this.apiVersion = '1.5.0'
@@ -110,68 +133,108 @@ export class UGGScraper {
   }
 
   /**
-   * Get builds for a champion in a specific role.
+   * Fetch the raw API response for a champion, with caching.
    */
-  async getBuilds(championSlug: string, role: string): Promise<BuildData[]> {
-    const cacheKey = `${championSlug}-${role}`
-    const cached = this.cache.get(cacheKey)
+  private async fetchRawData(championSlug: string): Promise<{ data: any; champName: string } | null> {
+    const cached = this.rawCache.get(championSlug)
     if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
-      console.log(`[Scraper] Cache hit: ${cacheKey}`)
-      return cached.builds
+      console.log(`[Scraper] Raw cache hit: ${championSlug}`)
+      const champion = this.ddragon.getChampionBySlug(championSlug)
+      return { data: cached.data, champName: champion?.name ?? championSlug }
     }
 
     await this.fetchMeta()
 
-    // Resolve champion numeric key from DDragon (e.g. "103" for Ahri)
     const champion = this.ddragon.getChampionBySlug(championSlug)
     if (!champion) {
       console.error(`[Scraper] Unknown champion slug: ${championSlug}`)
-      return this.getFallbackBuild(role)
+      return null
     }
 
-    const champKey = champion.key
-    const roleCode = UGG_ROLE_CODES[role] || '5'
-
-    const url = `https://stats2.u.gg/lol/1.5/overview/${this.currentPatch}/ranked_solo_5x5/${champKey}/${this.apiVersion}.json`
+    const url = `https://stats2.u.gg/lol/1.5/overview/${this.currentPatch}/ranked_solo_5x5/${champion.key}/${this.apiVersion}.json`
     console.log(`[Scraper] Fetching: ${url}`)
 
     try {
       const response = await axios.get(url, { timeout: 10000 })
-      const rawData = response.data
-
-      const buildArray = this.findBuildArray(rawData, roleCode)
-      if (!buildArray) {
-        console.error(`[Scraper] No build data found for ${champion.name} (${role}) in API response`)
-        return this.getFallbackBuild(role)
-      }
-
-      const build = this.parseBuildArray(buildArray, role)
-      console.log(`[Scraper] Parsed build for ${champion.name}: WR=${build.winRate}, games=${build.games}, keystone=${build.runes.keystone.name}`)
-
-      const builds = [build]
-      this.cache.set(cacheKey, { builds, timestamp: Date.now() })
-      return builds
+      this.rawCache.set(championSlug, { data: response.data, timestamp: Date.now() })
+      return { data: response.data, champName: champion.name }
     } catch (err: any) {
       console.error(`[Scraper] API request failed: ${err.message}`)
-      return this.getFallbackBuild(role)
+      return null
     }
   }
 
   /**
-   * Walk through region → rank → role to find build data.
-   * Returns the inner buildDataArray (13-element array).
+   * Get builds for ALL roles for a champion at a given rank.
+   * Returns builds keyed by role, plus the most popular role.
    */
-  private findBuildArray(data: any, roleCode: string): any[] | null {
+  async getAllRoleBuilds(championSlug: string, rank: string = DEFAULT_RANK): Promise<AllRoleBuilds> {
+    const result = await this.fetchRawData(championSlug)
+    if (!result) {
+      return {
+        buildsByRole: { mid: this.getFallbackBuild('mid') },
+        defaultRole: 'mid',
+        availableRoles: ['mid'],
+        rank,
+      }
+    }
+
+    const { data: rawData, champName } = result
+    const buildsByRole: Record<string, BuildData[]> = {}
+    const roleCounts: Record<string, number> = {}
+
+    for (const [roleName, roleCode] of Object.entries(UGG_ROLE_CODES)) {
+      // Try the requested rank first
+      let buildArray = this.findBuildArrayForRank(rawData, roleCode, rank)
+
+      // Fall back through other ranks if no data at requested rank
+      if (!buildArray) {
+        for (const fallbackRank of RANK_FALLBACK) {
+          if (fallbackRank === rank) continue
+          buildArray = this.findBuildArrayForRank(rawData, roleCode, fallbackRank)
+          if (buildArray) break
+        }
+      }
+
+      if (buildArray) {
+        const build = this.parseBuildArray(buildArray, roleName)
+        buildsByRole[roleName] = [build]
+        // Use raw match count for popularity ranking
+        const overallRaw = buildArray[6] || []
+        roleCounts[roleName] = overallRaw[1] ?? 0
+      }
+    }
+
+    // Default role = highest game count
+    const defaultRole = Object.entries(roleCounts)
+      .sort(([, a], [, b]) => b - a)[0]?.[0] || 'mid'
+
+    const availableRoles = Object.keys(buildsByRole)
+
+    console.log(`[Scraper] ${champName}: roles=[${availableRoles.join(', ')}], default=${defaultRole}, counts=${JSON.stringify(roleCounts)}`)
+
+    return { buildsByRole, defaultRole, availableRoles, rank }
+  }
+
+  /**
+   * Legacy single-role getter (kept for backward compat).
+   */
+  async getBuilds(championSlug: string, role: string): Promise<BuildData[]> {
+    const allBuilds = await this.getAllRoleBuilds(championSlug, DEFAULT_RANK)
+    return allBuilds.buildsByRole[role] || allBuilds.buildsByRole[allBuilds.defaultRole] || this.getFallbackBuild(role)
+  }
+
+  /**
+   * Find build data for a specific role at a specific rank.
+   */
+  private findBuildArrayForRank(data: any, roleCode: string, rank: string): any[] | null {
     for (const region of [DEFAULT_REGION, '1', '2', '3']) {
       if (!data[region]) continue
-      for (const rank of RANK_FALLBACK) {
-        const roleEntry = data[region]?.[rank]?.[roleCode]
-        if (!roleEntry) continue
-        // roleEntry = [buildDataArray, timestamp]
-        const buildDataArray = Array.isArray(roleEntry) ? roleEntry[0] : null
-        if (buildDataArray && Array.isArray(buildDataArray) && buildDataArray.length > 6) {
-          return buildDataArray
-        }
+      const roleEntry = data[region]?.[rank]?.[roleCode]
+      if (!roleEntry) continue
+      const buildDataArray = Array.isArray(roleEntry) ? roleEntry[0] : null
+      if (buildDataArray && Array.isArray(buildDataArray) && buildDataArray.length > 6) {
+        return buildDataArray
       }
     }
     return null
@@ -213,19 +276,45 @@ export class UGGScraper {
     const primaryTreeInfo = this.ddragon.getRuneById(primaryStyleId)
     const subTreeInfo     = this.ddragon.getRuneById(subStyleId)
 
-    // Stat shards — u.gg returns them as strings ("5005"), convert to numbers
+    const trees = this.ddragon.getRuneTrees()
+    const primaryTreeDef = trees.find(t => t.id === primaryStyleId)
+
+    const keystoneIds = new Set<number>(
+      (primaryTreeDef?.slots[0]?.runes ?? []).map((r: any) => r.id)
+    )
+
+    const keystoneId = runeIds.find(id => keystoneIds.has(id)) ?? runeIds[0]
+
+    const runeSlotIndex = new Map<number, number>()
+    for (const tree of trees) {
+      if (!tree.slots) continue
+      for (let slotIdx = 0; slotIdx < tree.slots.length; slotIdx++) {
+        for (const rune of tree.slots[slotIdx].runes) {
+          runeSlotIndex.set(rune.id, slotIdx)
+        }
+      }
+    }
+
+    const primaryPerks = runeIds
+      .filter(id => id !== keystoneId && this.ddragon.getRuneById(id)?.treeName === primaryTreeInfo?.name)
+      .sort((a, b) => (runeSlotIndex.get(a) ?? 99) - (runeSlotIndex.get(b) ?? 99))
+
+    const subPerks = runeIds
+      .filter(id => this.ddragon.getRuneById(id)?.treeName === subTreeInfo?.name)
+      .sort((a, b) => (runeSlotIndex.get(a) ?? 99) - (runeSlotIndex.get(b) ?? 99))
+
     const shardIds: number[] = (shardsRaw[2] ?? []).map((s: string | number) => parseInt(String(s), 10))
 
-    const allPerkIds = [...runeIds, ...shardIds]
+    const allPerkIds = [keystoneId, ...primaryPerks, ...subPerks, ...shardIds]
 
     const runes: BuildData['runes'] = {
       primaryTree:   primaryTreeInfo?.name ?? '',
       primaryTreeId: primaryStyleId,
       subTree:       subTreeInfo?.name ?? '',
       subTreeId:     subStyleId,
-      keystone:      this.runeIdToInfo(runeIds[0]),
-      primaryPerks:  runeIds.slice(1, 4).map(id => this.runeIdToInfo(id)),
-      subPerks:      runeIds.slice(4, 6).map(id => this.runeIdToInfo(id)),
+      keystone:      this.runeIdToInfo(keystoneId),
+      primaryPerks:  primaryPerks.map(id => this.runeIdToInfo(id)),
+      subPerks:      subPerks.map(id => this.runeIdToInfo(id)),
       statShards:    shardIds,
       allPerkIds,
     }
@@ -253,7 +342,7 @@ export class UGGScraper {
       fullBuild: coreAll,
     }
 
-    // Skills — abilitiesRaw[2] is the level-by-level array, abilitiesRaw[3] is the max order string
+    // Skills
     const levelOrder: string[] = abilitiesRaw[2] ?? []
     const maxOrderStr: string  = abilitiesRaw[3] ?? ''
     const skillOrder = maxOrderStr ? maxOrderStr.split('') : []

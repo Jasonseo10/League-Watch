@@ -2,6 +2,7 @@ export interface ChampionInfo {
   championId: number
   championName: string
   championSlug: string
+  championDDragonId: string
   role: string
 }
 
@@ -62,6 +63,19 @@ export interface BuildsPayload {
   builds: BuildData[]
 }
 
+export interface AllRoleBuildsPayload {
+  champion: ChampionInfo
+  buildsByRole: Record<string, BuildData[]>
+  defaultRole: string
+  availableRoles: string[]
+  rank: string
+}
+
+export interface RankOption {
+  label: string
+  code: string
+}
+
 export interface LCUStatus {
   connected: boolean
   message: string
@@ -73,7 +87,7 @@ declare global {
     leagueWatch: {
       onLCUStatus: (callback: (status: LCUStatus) => void) => void
       onChampionSelected: (callback: (data: ChampionInfo) => void) => void
-      onBuildsReceived: (callback: (data: BuildsPayload) => void) => void
+      onBuildsReceived: (callback: (data: AllRoleBuildsPayload) => void) => void
       onChampSelectEnded: (callback: () => void) => void
       onChampSelectError: (callback: (data: { message: string }) => void) => void
       onVisibilityChanged: (callback: (visible: boolean) => void) => void
@@ -82,6 +96,8 @@ declare global {
       pushRunes: (runes: any) => Promise<{ success: boolean; error?: string }>
       pushItems: (items: any) => Promise<{ success: boolean; error?: string }>
       pushSpells: (spells: any) => Promise<{ success: boolean; error?: string }>
+      requestRankChange: (championSlug: string, rank: string) => Promise<void>
+      getRankOptions: () => Promise<RankOption[]>
       getDDragonVersion: () => Promise<string>
       getAssetUrl: (type: string, key: string) => Promise<string>
     }
