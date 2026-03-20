@@ -33,3 +33,34 @@ html, body, #root {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(200, 155, 60, 0.7);
 }
+
+/* Dock icon magnification on hover (macOS dock effect) */
+.dock-icon:hover {
+  width: calc(var(--icon-size) * 1.4) !important;
+  height: calc(var(--icon-size) * 1.4) !important;
+  margin-top: calc(var(--icon-size) * -0.4);
+}
+
+.dock-icon:hover + .dock-icon {
+  width: calc(var(--icon-size) * 1.2) !important;
+  height: calc(var(--icon-size) * 1.2) !important;
+  margin-top: calc(var(--icon-size) * -0.2);
+}
+
+.dock-icon:hover + .dock-icon + .dock-icon {
+  width: calc(var(--icon-size) * 1.1) !important;
+  height: calc(var(--icon-size) * 1.1) !important;
+  margin-top: calc(var(--icon-size) * -0.1);
+}
+
+.dock-icon:has(+ .dock-icon:hover) {
+  width: calc(var(--icon-size) * 1.2) !important;
+  height: calc(var(--icon-size) * 1.2) !important;
+  margin-top: calc(var(--icon-size) * -0.2);
+}
+
+.dock-icon:has(+ .dock-icon + .dock-icon:hover) {
+  width: calc(var(--icon-size) * 1.1) !important;
+  height: calc(var(--icon-size) * 1.1) !important;
+  margin-top: calc(var(--icon-size) * -0.1);
+}

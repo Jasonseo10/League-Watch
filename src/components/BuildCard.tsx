@@ -4,6 +4,9 @@ import { RuneSection } from './RuneSection'
 import { ItemSection } from './ItemSection'
 import { SkillOrder } from './SkillOrder'
 import { SpellSection } from './SpellSection'
+import { AnimatedText } from './ui/animated-text'
+import { Dock, DockIcon } from './ui/dock'
+import { Menu, MenuItem } from './ui/fluid-menu'
 import { cn } from '../lib/utils'
 
 const ROLE_DISPLAY: Record<string, { label: string; short: string }> = {
@@ -38,7 +41,7 @@ export function BuildCard({
 }: BuildCardProps) {
   const [currentBuildIndex, setCurrentBuildIndex] = useState(0)
   const [activeTab, setActiveTab] = useState<'runes' | 'items' | 'skills'>('runes')
-  const [showRankDropdown, setShowRankDropdown] = useState(false)
+  const [spellsSwapped, setSpellsSwapped] = useState(false)
 
   const currentBuild = builds[currentBuildIndex]
   if (!currentBuild) return null
@@ -88,9 +91,12 @@ export function BuildCard({
 
   const handlePushSpells = async () => {
     if (currentBuild.summonerSpells.length >= 2) {
+      const spells = spellsSwapped
+        ? [currentBuild.summonerSpells[1], currentBuild.summonerSpells[0]]
+        : currentBuild.summonerSpells
       await onPushSpells({
-        spell1Id: currentBuild.summonerSpells[0].id,
-        spell2Id: currentBuild.summonerSpells[1].id,
+        spell1Id: spells[0].id,
+        spell2Id: spells[1].id,
       })
     }
   }
@@ -102,12 +108,11 @@ export function BuildCard({
 
   const handleRankChange = (rank: string) => {
     setCurrentBuildIndex(0)
-    setShowRankDropdown(false)
     onRankChange(rank)
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-lol-dark/95 backdrop-blur-md rounded-xl border border-lol-gold/20 overflow-hidden">
+    <div className="w-full h-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-lol-gray/80 to-transparent border-b border-lol-gold/10">
         <img
@@ -117,8 +122,18 @@ export function BuildCard({
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
         />
         <div className="flex-1 min-w-0">
-          <h2 className="text-white font-bold text-lg leading-tight">{champion.championName}</h2>
-          <div className="flex items-center gap-2 text-xs text-lol-light">
+          <AnimatedText
+            text={champion.championName}
+            as="h2"
+            duration={0.04}
+            delay={0.02}
+            textClassName="text-lg font-bold text-white"
+            underlineGradient="from-lol-gold via-lol-gold/60 to-transparent"
+            underlineHeight="h-[2px]"
+            underlineOffset="-bottom-1"
+            className="items-start gap-0"
+          />
+          <div className="flex items-center gap-2 text-xs text-lol-light mt-1">
             <span className="capitalize">{ROLE_DISPLAY[selectedRole]?.label || selectedRole}</span>
             <span className="text-lol-gold/50">•</span>
             <span>Patch {ddragonVersion}</span>
@@ -130,61 +145,47 @@ export function BuildCard({
         </div>
       </div>
 
-      {/* Role Selector */}
-      <div className="flex items-center border-b border-lol-gold/10 bg-lol-gray/30">
-        <div className="flex flex-1">
+      {/* Role Selector (Dock) + Rank Dropdown */}
+      <div className="flex items-center justify-between border-b border-lol-gold/10 bg-lol-gray/30 px-2 py-1.5">
+        <Dock iconSize={36} maxAdditionalSize={2}>
           {ROLE_ORDER.map((role) => {
             const available = availableRoles.includes(role)
             const active = role === selectedRole
             return (
-              <button
+              <DockIcon
                 key={role}
+                name={ROLE_DISPLAY[role]?.label || role}
                 onClick={() => available && handleRoleChange(role)}
+                isActive={active}
                 disabled={!available}
-                className={cn(
-                  'flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all',
-                  active
-                    ? 'text-lol-gold border-b-2 border-lol-gold bg-lol-gold/10'
-                    : available
-                      ? 'text-lol-light/60 hover:text-white hover:bg-lol-gold/5'
-                      : 'text-lol-light/20 cursor-not-allowed'
-                )}
               >
                 {ROLE_DISPLAY[role]?.short || role.toUpperCase()}
-              </button>
+              </DockIcon>
             )
           })}
-        </div>
+        </Dock>
 
-        {/* Rank Dropdown */}
-        <div className="relative px-2">
-          <button
-            onClick={() => setShowRankDropdown(!showRankDropdown)}
-            className="text-[10px] font-semibold text-lol-blue hover:text-white transition px-2 py-1.5 rounded flex items-center gap-1"
-          >
-            {currentRankLabel}
-            <span className="text-[8px]">{showRankDropdown ? '\u25B2' : '\u25BC'}</span>
-          </button>
-
-          {showRankDropdown && (
-            <div className="absolute right-0 top-full z-50 mt-1 bg-lol-dark border border-lol-gold/30 rounded-lg shadow-xl max-h-48 overflow-y-auto w-32">
-              {rankOptions.map((opt) => (
-                <button
-                  key={opt.code}
-                  onClick={() => handleRankChange(opt.code)}
-                  className={cn(
-                    'w-full text-left px-3 py-1.5 text-[11px] transition hover:bg-lol-gold/10',
-                    opt.code === selectedRank
-                      ? 'text-lol-gold font-semibold'
-                      : 'text-lol-light'
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Rank Dropdown (Fluid Menu) */}
+        <Menu
+          trigger={
+            <span className="text-[11px] font-semibold text-lol-blue hover:text-white transition px-2 py-1 rounded">
+              {currentRankLabel}
+            </span>
+          }
+          align="right"
+          menuClassName="!w-32 !bg-lol-dark !ring-lol-gold/30 !rounded-lg"
+        >
+          {rankOptions.map((opt) => (
+            <MenuItem
+              key={opt.code}
+              onClick={() => handleRankChange(opt.code)}
+              isActive={opt.code === selectedRank}
+              compact
+            >
+              {opt.label}
+            </MenuItem>
+          ))}
+        </Menu>
       </div>
 
       {/* Loading overlay for rank changes */}
@@ -239,13 +240,18 @@ export function BuildCard({
 
       {/* Summoner Spells + Push */}
       <div className="px-4 py-2 border-t border-lol-gold/10 bg-lol-gray/40">
-        <SpellSection spells={currentBuild.summonerSpells} onPush={handlePushSpells} />
+        <SpellSection
+          spells={currentBuild.summonerSpells}
+          swapped={spellsSwapped}
+          onSwap={() => setSpellsSwapped(s => !s)}
+          onPush={handlePushSpells}
+        />
       </div>
 
-      {/* Footer */}
-      <div className="px-4 py-1.5 text-center border-t border-lol-gold/10">
+      {/* Footer — also serves as drag handle */}
+      <div className="px-4 py-1.5 text-center border-t border-lol-gold/10 cursor-move" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
         <span className="text-[10px] text-lol-light/50">
-          League Watch • Ctrl+L to toggle • Shift+F1 to interact
+          League Watch • Ctrl+L to toggle • Drag to move
         </span>
       </div>
     </div>

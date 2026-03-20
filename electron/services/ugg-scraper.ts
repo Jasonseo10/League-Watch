@@ -25,6 +25,9 @@ export interface BuildData {
     core: ItemInfo[]
     boots: ItemInfo | null
     fullBuild: ItemInfo[]
+    fourthItemOptions: ItemInfo[]
+    fifthItemOptions: ItemInfo[]
+    sixthItemOptions: ItemInfo[]
   }
 
   skills: {
@@ -259,8 +262,10 @@ export class UGGScraper {
     const startRaw   = entry[2] || []
     const coreRaw    = entry[3] || []
     const abilitiesRaw = entry[4] || []
+    const lateRaw    = entry[5] || []
     const overallRaw = entry[6] || []
     const shardsRaw  = entry[8] || []
+
 
     // Win rate
     const wins = overallRaw[0] ?? 0
@@ -335,11 +340,37 @@ export class UGGScraper {
       return true
     })
 
+    // Late items — entry[5] contains options for slots 4, 5, 6 (+ consumables at [3])
+    // Each slot: [[itemId, wins, matches], [itemId, wins, matches], ...]
+    const parseLateSlot = (slotData: any[]): ItemInfo[] => {
+      if (!Array.isArray(slotData)) return []
+      return slotData
+        .filter((opt: any) => Array.isArray(opt) && opt.length >= 3)
+        .sort((a: any[], b: any[]) => (b[2] ?? 0) - (a[2] ?? 0)) // sort by matches (popularity)
+        .map((opt: any[]) => this.itemIdToInfo(opt[0]))
+        .filter(Boolean) as ItemInfo[]
+    }
+
+    const fourthItemOptions = parseLateSlot(lateRaw[0])
+    const fifthItemOptions  = parseLateSlot(lateRaw[1])
+    const sixthItemOptions  = parseLateSlot(lateRaw[2])
+
+    // Full build = core items + top pick from each late slot
+    const fullBuild = [
+      ...coreAll,
+      ...(fourthItemOptions[0] ? [fourthItemOptions[0]] : []),
+      ...(fifthItemOptions[0] ? [fifthItemOptions[0]] : []),
+      ...(sixthItemOptions[0] ? [sixthItemOptions[0]] : []),
+    ]
+
     const items: BuildData['items'] = {
       starting,
       core,
       boots,
-      fullBuild: coreAll,
+      fullBuild,
+      fourthItemOptions,
+      fifthItemOptions,
+      sixthItemOptions,
     }
 
     // Skills
@@ -423,6 +454,9 @@ export class UGGScraper {
         core:      [],
         boots:     null,
         fullBuild: [],
+        fourthItemOptions: [],
+        fifthItemOptions:  [],
+        sixthItemOptions:  [],
       },
       skills: {
         order:      [],

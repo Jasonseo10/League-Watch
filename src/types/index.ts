@@ -48,6 +48,9 @@ export interface BuildData {
     core: ItemInfo[]
     boots: ItemInfo | null
     fullBuild: ItemInfo[]
+    fourthItemOptions: ItemInfo[]
+    fifthItemOptions: ItemInfo[]
+    sixthItemOptions: ItemInfo[]
   }
 
   skills: {
@@ -91,8 +94,6 @@ declare global {
       onChampSelectEnded: (callback: () => void) => void
       onChampSelectError: (callback: (data: { message: string }) => void) => void
       onVisibilityChanged: (callback: (visible: boolean) => void) => void
-      onInteractableChanged: (callback: (interactable: boolean) => void) => void
-      setInteractable: (value: boolean) => void
       pushRunes: (runes: any) => Promise<{ success: boolean; error?: string }>
       pushItems: (items: any) => Promise<{ success: boolean; error?: string }>
       pushSpells: (spells: any) => Promise<{ success: boolean; error?: string }>

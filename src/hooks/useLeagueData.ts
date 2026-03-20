@@ -12,7 +12,6 @@ export function useLeagueData() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isVisible, setIsVisible] = useState(true)
-  const [isInteractable, setIsInteractable] = useState(false)
 
   // Current builds for the selected role
   const builds = buildsByRole && selectedRole ? (buildsByRole[selectedRole] || null) : null
@@ -50,10 +49,8 @@ export function useLeagueData() {
     })
 
     api.onChampSelectEnded(() => {
-      setChampion(null)
-      setBuildsByRole(null)
-      setAvailableRoles([])
-      setSelectedRole('')
+      // Keep builds visible during loading screen and in-game.
+      // They will be replaced when a new champ select starts.
       setIsLoading(false)
       setError(null)
     })
@@ -65,10 +62,6 @@ export function useLeagueData() {
 
     api.onVisibilityChanged((visible) => {
       setIsVisible(visible)
-    })
-
-    api.onInteractableChanged((interactable) => {
-      setIsInteractable(interactable)
     })
   }, [])
 
@@ -107,7 +100,6 @@ export function useLeagueData() {
     isLoading,
     error,
     isVisible,
-    isInteractable,
     changeRole,
     changeRank,
     pushRunes,

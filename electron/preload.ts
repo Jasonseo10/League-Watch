@@ -10,8 +10,6 @@ export interface LeagueWatchAPI {
 
   // Overlay events
   onVisibilityChanged: (callback: (visible: boolean) => void) => void
-  onInteractableChanged: (callback: (interactable: boolean) => void) => void
-  setInteractable: (value: boolean) => void
 
   // Push actions
   pushRunes: (runes: any) => Promise<{ success: boolean; error?: string }>
@@ -48,12 +46,6 @@ contextBridge.exposeInMainWorld('leagueWatch', {
   // Overlay events
   onVisibilityChanged: (callback: (visible: boolean) => void) => {
     ipcRenderer.on('overlay:visibility-changed', (_event, visible) => callback(visible))
-  },
-  onInteractableChanged: (callback: (interactable: boolean) => void) => {
-    ipcRenderer.on('overlay:interactable-changed', (_event, interactable) => callback(interactable))
-  },
-  setInteractable: (value: boolean) => {
-    ipcRenderer.send('overlay:set-interactable', value)
   },
 
   // Push actions

@@ -20,12 +20,6 @@ contextBridge.exposeInMainWorld('leagueWatch', {
   onVisibilityChanged: (callback) => {
     ipcRenderer.on('overlay:visibility-changed', (_event, visible) => callback(visible));
   },
-  onInteractableChanged: (callback) => {
-    ipcRenderer.on('overlay:interactable-changed', (_event, interactable) => callback(interactable));
-  },
-  setInteractable: (value) => {
-    ipcRenderer.send('overlay:set-interactable', value);
-  },
   pushRunes: (runes) => ipcRenderer.invoke('lcu:push-runes', runes),
   pushItems: (items) => ipcRenderer.invoke('lcu:push-items', items),
   pushSpells: (spells) => ipcRenderer.invoke('lcu:push-spells', spells),

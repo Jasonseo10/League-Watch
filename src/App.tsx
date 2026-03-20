@@ -2,8 +2,12 @@ import { useState, useEffect } from 'react'
 import { useLeagueData } from './hooks/useLeagueData'
 import { BuildCard } from './components/BuildCard'
 import { StatusIndicator } from './components/StatusIndicator'
+import { AnimatedBorder } from './components/ui/animated-border'
+
+const dragStyle = { WebkitAppRegion: 'drag' } as React.CSSProperties
 
 function App() {
+
   const {
     lcuStatus,
     champion,
@@ -14,7 +18,6 @@ function App() {
     rankOptions,
     isLoading,
     error,
-    isInteractable,
     changeRole,
     changeRank,
     pushRunes,
@@ -30,29 +33,27 @@ function App() {
     }
   }, [])
 
-  // Waiting for League client
-  if (!lcuStatus.connected) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-6">
-        <div className="bg-lol-dark/95 backdrop-blur-md rounded-xl border border-lol-gold/20 p-6 w-full max-w-sm">
+  const content = (() => {
+    // Waiting for League client
+    if (!lcuStatus.connected) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center p-6 cursor-move" style={dragStyle}>
           <div className="text-center mb-4">
             <h1 className="text-lol-gold text-xl font-bold tracking-wide">LEAGUE WATCH</h1>
             <p className="text-lol-light/60 text-xs mt-1">Champion Build Overlay</p>
           </div>
           <StatusIndicator status={lcuStatus} />
           <p className="text-center text-[10px] text-lol-light/30 mt-4">
-            Ctrl+L to toggle • Shift+F1 to interact
+            Ctrl+L to toggle • Drag to move
           </p>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  // Connected but no champ select yet
-  if (!champion && !builds) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-6">
-        <div className="bg-lol-dark/95 backdrop-blur-md rounded-xl border border-lol-gold/20 p-6 w-full max-w-sm">
+    // Connected but no champ select yet
+    if (!champion && !builds) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center p-6 cursor-move" style={dragStyle}>
           <div className="text-center mb-4">
             <h1 className="text-lol-gold text-xl font-bold tracking-wide">LEAGUE WATCH</h1>
             <p className="text-lol-light/60 text-xs mt-1">Patch {ddragonVersion}</p>
@@ -65,15 +66,13 @@ function App() {
             Hover or select a champion to see builds
           </p>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  // Loading builds for a new champion
-  if (isLoading && champion && !builds) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-6">
-        <div className="bg-lol-dark/95 backdrop-blur-md rounded-xl border border-lol-gold/20 p-6 w-full max-w-sm">
+    // Loading builds for a new champion
+    if (isLoading && champion && !builds) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center p-6 cursor-move" style={dragStyle}>
           <div className="text-center">
             <img
               src={`https://ddragon.leagueoflegends.com/cdn/${ddragonVersion}/img/champion/${champion.championDDragonId}.png`}
@@ -89,34 +88,24 @@ function App() {
             <p className="text-lol-light/60 text-xs mt-3">Fetching builds...</p>
           </div>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  // Error state
-  if (error && !builds) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-6">
-        <div className="bg-lol-dark/95 backdrop-blur-md rounded-xl border border-lol-red/30 p-6 w-full max-w-sm">
+    // Error state
+    if (error && !builds) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center p-6 cursor-move" style={dragStyle}>
           <p className="text-lol-red text-sm text-center">{error}</p>
           <p className="text-center text-[10px] text-lol-light/30 mt-2">
-            Ctrl+L to toggle • Shift+F1 to interact
+            Ctrl+L to toggle • Drag to move
           </p>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  // Show builds
-  if (builds && champion) {
-    return (
-      <div className="w-full h-full p-2 relative">
-        {/* Interactable mode indicator */}
-        {isInteractable && (
-          <div className="absolute top-0 left-0 right-0 z-50 bg-lol-blue/90 text-white text-[10px] text-center py-1 rounded-t-xl font-semibold">
-            INTERACTIVE MODE — Click buttons • Press Shift+F1 to lock
-          </div>
-        )}
+    // Show builds
+    if (builds && champion) {
+      return (
         <BuildCard
           champion={{ ...champion, role: selectedRole }}
           builds={builds}
@@ -132,11 +121,17 @@ function App() {
           ddragonVersion={ddragonVersion}
           isLoading={isLoading}
         />
-      </div>
-    )
-  }
+      )
+    }
 
-  return null
+    return null
+  })()
+
+  return (
+    <AnimatedBorder className="w-full h-full rounded-xl bg-lol-dark/95 backdrop-blur-md">
+      {content}
+    </AnimatedBorder>
+  )
 }
 
 export default App

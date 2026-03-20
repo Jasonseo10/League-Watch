@@ -1,5 +1,6 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
 import path from 'path'
+import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { LCUConnection } from './lcu/connection'
 import { LCUWebSocket } from './lcu/websocket'
@@ -19,23 +20,56 @@ let lcuApi: LCUApi | null = null
 let ddragon: DataDragonService
 let scraper: UGGScraper
 let isOverlayVisible = true
-let isInteractable = false
 let currentLCUStatus = { connected: false, message: 'Initializing...' }
+
+// === Window position persistence ===
+
+function getSettingsPath(): string {
+  return path.join(app.getPath('userData'), 'window-position.json')
+}
+
+function loadWindowPosition(): { x: number; y: number } | null {
+  try {
+    const data = fs.readFileSync(getSettingsPath(), 'utf-8')
+    const pos = JSON.parse(data)
+    if (typeof pos.x === 'number' && typeof pos.y === 'number') {
+      return pos
+    }
+  } catch {
+    // File doesn't exist yet — use default
+  }
+  return null
+}
+
+function saveWindowPosition(x: number, y: number) {
+  try {
+    fs.writeFileSync(getSettingsPath(), JSON.stringify({ x, y }))
+  } catch (err: any) {
+    console.error('[League Watch] Failed to save window position:', err.message)
+  }
+}
+
+// === Window creation ===
 
 function createOverlayWindow(): BrowserWindow {
   const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.size // use full screen size, not workArea
+  const { width, height } = primaryDisplay.size
+
+  const savedPos = loadWindowPosition()
+  const x = savedPos?.x ?? (width - 440)
+  const y = savedPos?.y ?? (Math.floor(height / 2) - 340)
 
   const win = new BrowserWindow({
     width: 420,
     height: 680,
-    x: width - 440,
-    y: Math.floor(height / 2) - 340,
+    x,
+    y,
     transparent: true,
     frame: false,
     resizable: false,
     skipTaskbar: true,
     hasShadow: false,
+    movable: true,
     focusable: false, // Prevent stealing focus from the game
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.cjs'),
@@ -44,15 +78,21 @@ function createOverlayWindow(): BrowserWindow {
     },
   })
 
-  // Use 'screen-saver' level to stay above fullscreen/borderless games
+  // Use 'screen-saver' level to stay above borderless fullscreen games
   win.setAlwaysOnTop(true, 'screen-saver')
-
-  // Click-through by default
-  win.setIgnoreMouseEvents(true, { forward: true })
 
   // Prevent the window from being minimized when game takes focus
   win.on('minimize', () => {
     win.restore()
+  })
+
+  // Save position when the window is moved
+  win.on('moved', () => {
+    if (!win.isDestroyed()) {
+      const [newX, newY] = win.getPosition()
+      saveWindowPosition(newX, newY)
+      console.log(`[League Watch] Window moved to (${newX}, ${newY})`)
+    }
   })
 
   // Intercept close event — hide instead of destroying so hotkeys keep working
@@ -76,7 +116,7 @@ function createOverlayWindow(): BrowserWindow {
     win.loadFile(path.join(__dirname, '../../dist/index.html'))
   }
 
-  console.log(`[League Watch] Overlay window created at (${width - 440}, ${Math.floor(height / 2) - 340})`)
+  console.log(`[League Watch] Overlay window created at (${x}, ${y})`)
 
   return win
 }
@@ -90,30 +130,14 @@ function registerHotkeys() {
       isOverlayVisible = false
       console.log('[League Watch] Overlay hidden (Ctrl+L)')
     } else {
-      mainWindow.showInactive() // showInactive prevents stealing focus from game
+      mainWindow.showInactive()
       isOverlayVisible = true
       console.log('[League Watch] Overlay shown (Ctrl+L)')
     }
     mainWindow.webContents.send('overlay:visibility-changed', isOverlayVisible)
   })
 
-  // Shift+F1: Toggle interactable mode
-  globalShortcut.register('Shift+F1', () => {
-    if (!mainWindow) return
-    isInteractable = !isInteractable
-    if (isInteractable) {
-      mainWindow.setIgnoreMouseEvents(false)
-      mainWindow.setFocusable(true)
-      console.log('[League Watch] Overlay is now INTERACTABLE (Shift+F1)')
-    } else {
-      mainWindow.setIgnoreMouseEvents(true, { forward: true })
-      mainWindow.setFocusable(false)
-      console.log('[League Watch] Overlay is now CLICK-THROUGH (Shift+F1)')
-    }
-    mainWindow.webContents.send('overlay:interactable-changed', isInteractable)
-  })
-
-  console.log('[League Watch] Hotkeys registered: Ctrl+L (toggle), Shift+F1 (interact)')
+  console.log('[League Watch] Hotkeys registered: Ctrl+L (toggle)')
 }
 
 // Periodically re-assert always-on-top to prevent the game from pushing us under
@@ -232,18 +256,6 @@ function setupIPC() {
     }
   })
 
-  ipcMain.on('overlay:set-interactable', (_event, value: boolean) => {
-    if (!mainWindow) return
-    isInteractable = value
-    if (isInteractable) {
-      mainWindow.setIgnoreMouseEvents(false)
-      mainWindow.setFocusable(true)
-    } else {
-      mainWindow.setIgnoreMouseEvents(true, { forward: true })
-      mainWindow.setFocusable(false)
-    }
-  })
-
   ipcMain.handle('builds:request-rank-change', async (_event, championSlug: string, rank: string) => {
     try {
       const allBuilds = await scraper.getAllRoleBuilds(championSlug, rank)
@@ -284,7 +296,6 @@ app.whenReady().then(async () => {
   connectToLCU()
 
   mainWindow.on('closed', () => {
-    // Only fires if the process is forcibly killed — close is intercepted above
     mainWindow = null
   })
 })
