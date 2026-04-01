@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('leagueWatch', {
   pushSpells: (spells) => ipcRenderer.invoke('lcu:push-spells', spells),
   requestRankChange: (championSlug, rank) => ipcRenderer.invoke('builds:request-rank-change', championSlug, rank),
   getRankOptions: () => ipcRenderer.invoke('builds:get-rank-options'),
+  getStatus: () => ipcRenderer.invoke('lcu:get-status'),
   getDDragonVersion: () => ipcRenderer.invoke('ddragon:version'),
   getAssetUrl: (type, key) => ipcRenderer.invoke('ddragon:asset-url', type, key),
+  getChampionAbilities: (ddragonId) => ipcRenderer.invoke('ddragon:champion-abilities', ddragonId),
 });

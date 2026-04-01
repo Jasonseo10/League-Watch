@@ -1,4 +1,5 @@
 import { BuildData } from '../types'
+import { NeonButton } from './ui/neon-button'
 
 interface ItemSectionProps {
   items: BuildData['items']
@@ -56,13 +57,9 @@ export function ItemSection({ items, onPush }: ItemSectionProps) {
       )}
 
       {/* Push Items Button */}
-      <button
-        onClick={onPush}
-        className="w-full py-2 bg-lol-blue/20 hover:bg-lol-blue/30 text-lol-blue text-xs font-semibold rounded-lg transition flex items-center justify-center gap-2"
-      >
-        <span>Push Items</span>
-        <span className="text-lol-blue/60">{'\u25B6\u25B6'}</span>
-      </button>
+      <NeonButton onClick={onPush} variant="teal" size="default" className="w-full text-lol-blue text-xs font-semibold">
+        Push Items ▶▶
+      </NeonButton>
     </div>
   )
 }

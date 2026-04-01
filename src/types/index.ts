@@ -24,6 +24,18 @@ export interface SpellInfo {
   icon: string
 }
 
+export interface AbilityData {
+  key: string    // 'P', 'Q', 'W', 'E', 'R'
+  name: string
+  description: string
+  icon: string
+}
+
+export interface ChampionAbilities {
+  passive: AbilityData
+  spells: AbilityData[]  // Q, W, E, R
+}
+
 export interface BuildData {
   name: string
   winRate: string
@@ -39,7 +51,7 @@ export interface BuildData {
     keystone: RuneInfo
     primaryPerks: RuneInfo[]
     subPerks: RuneInfo[]
-    statShards: number[]
+    statShards: RuneInfo[]
     allPerkIds: number[]
   }
 
@@ -99,8 +111,10 @@ declare global {
       pushSpells: (spells: any) => Promise<{ success: boolean; error?: string }>
       requestRankChange: (championSlug: string, rank: string) => Promise<void>
       getRankOptions: () => Promise<RankOption[]>
+      getStatus: () => Promise<LCUStatus>
       getDDragonVersion: () => Promise<string>
       getAssetUrl: (type: string, key: string) => Promise<string>
+      getChampionAbilities: (ddragonId: string) => Promise<ChampionAbilities | null>
     }
   }
 }

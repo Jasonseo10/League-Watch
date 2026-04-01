@@ -1,6 +1,7 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
 import { LCUConnection } from './lcu/connection'
 import { LCUWebSocket } from './lcu/websocket'
@@ -11,7 +12,72 @@ import { UGGScraper, RANK_OPTIONS } from './services/ugg-scraper'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const LOCKFILE_PATH = 'D:\\Riot Games\\League of Legends\\lockfile'
+/**
+ * Auto-detect the League of Legends lockfile path by:
+ * 1. Checking the running LeagueClientUx.exe process
+ * 2. Reading Riot's RiotClientInstalls.json config
+ * 3. Falling back to common install locations
+ */
+function findLockfilePath(): string {
+  // 1. Try to find via running League client process
+  try {
+    const output = execSync(
+      'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'LeagueClientUx.exe\'\\" | Select-Object -ExpandProperty ExecutablePath"',
+      { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
+    )
+    const exePath = output.trim()
+    if (exePath) {
+      const lockfile = path.join(path.dirname(exePath), 'lockfile')
+      console.log(`[League Watch] Found lockfile via process: ${lockfile}`)
+      return lockfile
+    }
+  } catch {
+    // Process not running or PowerShell failed
+  }
+
+  // 2. Try Riot's RiotClientInstalls.json
+  try {
+    const riotConfigPath = path.join(
+      process.env.PROGRAMDATA || 'C:\\ProgramData',
+      'Riot Games',
+      'RiotClientInstalls.json'
+    )
+    if (fs.existsSync(riotConfigPath)) {
+      const config = JSON.parse(fs.readFileSync(riotConfigPath, 'utf8'))
+      const rcPaths = [config.rc_default, config.rc_live].filter(Boolean) as string[]
+      for (const rcPath of rcPaths) {
+        const riotGamesDir = path.dirname(path.dirname(rcPath.replace(/\//g, '\\')))
+        const lockfile = path.join(riotGamesDir, 'League of Legends', 'lockfile')
+        if (fs.existsSync(lockfile)) {
+          console.log(`[League Watch] Found lockfile via RiotClientInstalls.json: ${lockfile}`)
+          return lockfile
+        }
+      }
+    }
+  } catch {
+    // Config not found or malformed
+  }
+
+  // 3. Common install locations
+  const commonPaths = [
+    'C:\\Riot Games\\League of Legends\\lockfile',
+    'D:\\Riot Games\\League of Legends\\lockfile',
+    'C:\\Program Files\\Riot Games\\League of Legends\\lockfile',
+    'C:\\Program Files (x86)\\Riot Games\\League of Legends\\lockfile',
+    'D:\\Program Files\\Riot Games\\League of Legends\\lockfile',
+    'D:\\Program Files (x86)\\Riot Games\\League of Legends\\lockfile',
+  ]
+
+  for (const p of commonPaths) {
+    if (fs.existsSync(p)) {
+      console.log(`[League Watch] Found lockfile at common path: ${p}`)
+      return p
+    }
+  }
+
+  console.log('[League Watch] Lockfile not found yet, will detect when League starts')
+  return commonPaths[0]
+}
 
 let mainWindow: BrowserWindow | null = null
 let lcuConnection: LCUConnection
@@ -56,11 +122,11 @@ function createOverlayWindow(): BrowserWindow {
   const { width, height } = primaryDisplay.size
 
   const savedPos = loadWindowPosition()
-  const x = savedPos?.x ?? (width - 440)
+  const x = savedPos?.x ?? (width - 360)
   const y = savedPos?.y ?? (Math.floor(height / 2) - 340)
 
   const win = new BrowserWindow({
-    width: 420,
+    width: 340,
     height: 680,
     x,
     y,
@@ -155,11 +221,14 @@ async function initializeServices() {
   console.log(`[League Watch] Data Dragon initialized - Patch ${ddragon.getCurrentVersion()}`)
 
   scraper = new UGGScraper(ddragon)
-  lcuConnection = new LCUConnection(LOCKFILE_PATH)
+  lcuConnection = new LCUConnection(findLockfilePath())
 }
 
 async function connectToLCU() {
   try {
+    // Re-detect lockfile path each attempt (League may have started since last check)
+    lcuConnection.setLockfilePath(findLockfilePath())
+
     const credentials = await lcuConnection.getCredentials()
     if (!credentials) {
       console.log('[League Watch] League client not running. Polling...')
@@ -276,12 +345,20 @@ function setupIPC() {
     return RANK_OPTIONS.map(r => ({ label: r.label, code: r.code }))
   })
 
+  ipcMain.handle('lcu:get-status', () => {
+    return currentLCUStatus
+  })
+
   ipcMain.handle('ddragon:version', () => {
     return ddragon.getCurrentVersion()
   })
 
   ipcMain.handle('ddragon:asset-url', (_event, type: string, key: string) => {
     return ddragon.getAssetUrl(type, key)
+  })
+
+  ipcMain.handle('ddragon:champion-abilities', (_event, ddragonId: string) => {
+    return ddragon.getChampionAbilities(ddragonId)
   })
 }
 

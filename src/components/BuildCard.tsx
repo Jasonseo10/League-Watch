@@ -1,13 +1,23 @@
 import { useState } from 'react'
-import { BuildData, ChampionInfo, RankOption } from '../types'
+import { BuildData, ChampionInfo, ChampionAbilities, RankOption } from '../types'
 import { RuneSection } from './RuneSection'
 import { ItemSection } from './ItemSection'
-import { SkillOrder } from './SkillOrder'
+
 import { SpellSection } from './SpellSection'
 import { AnimatedText } from './ui/animated-text'
 import { Dock, DockIcon } from './ui/dock'
 import { Menu, MenuItem } from './ui/fluid-menu'
 import { cn } from '../lib/utils'
+import { GlowingTooltip } from './ui/glowing-tooltip'
+
+/** Convert DDragon version (e.g. "16.6.1") to display patch (e.g. "26.6") */
+function toDisplayPatch(ddragonVersion: string): string {
+  if (!ddragonVersion) return ''
+  const parts = ddragonVersion.split('.')
+  const major = parseInt(parts[0], 10)
+  const minor = parts[1]
+  return `${major + 10}.${minor}`
+}
 
 const ROLE_DISPLAY: Record<string, { label: string; short: string }> = {
   top:     { label: 'Top',     short: 'TOP' },
@@ -33,15 +43,17 @@ interface BuildCardProps {
   onPushSpells: (spells: any) => Promise<{ success: boolean; error?: string }>
   ddragonVersion: string
   isLoading: boolean
+  abilities: ChampionAbilities | null
 }
 
 export function BuildCard({
   champion, builds, availableRoles, selectedRole, selectedRank, rankOptions,
-  onRoleChange, onRankChange, onPushRunes, onPushItems, onPushSpells, ddragonVersion, isLoading,
+  onRoleChange, onRankChange, onPushRunes, onPushItems, onPushSpells, ddragonVersion, isLoading, abilities,
 }: BuildCardProps) {
   const [currentBuildIndex, setCurrentBuildIndex] = useState(0)
-  const [activeTab, setActiveTab] = useState<'runes' | 'items' | 'skills'>('runes')
+  const [activeTab, setActiveTab] = useState<'runes' | 'items'>('runes')
   const [spellsSwapped, setSpellsSwapped] = useState(false)
+  const [hoveredAbility, setHoveredAbility] = useState<number | null>(null)
 
   const currentBuild = builds[currentBuildIndex]
   if (!currentBuild) return null
@@ -136,7 +148,7 @@ export function BuildCard({
           <div className="flex items-center gap-2 text-xs text-lol-light mt-1">
             <span className="capitalize">{ROLE_DISPLAY[selectedRole]?.label || selectedRole}</span>
             <span className="text-lol-gold/50">•</span>
-            <span>Patch {ddragonVersion}</span>
+            <span>Patch {toDisplayPatch(ddragonVersion)}</span>
           </div>
         </div>
         <div className="text-right text-xs">
@@ -144,6 +156,66 @@ export function BuildCard({
           <div className="text-lol-light">{currentBuild.games} games</div>
         </div>
       </div>
+
+      {/* Champion Abilities (dock-style magnification) */}
+      {abilities && (
+        <div className="flex items-center px-2 py-1.5 border-b border-lol-gold/10 bg-lol-gray/20">
+          <ul className="flex items-center rounded-xl border border-lol-gold/10 bg-gradient-to-t from-lol-dark to-lol-gray/50 p-1">
+            {[abilities.passive, ...abilities.spells].map((ability, i) => (
+              <li
+                key={i}
+                className="dock-icon group/ability relative flex cursor-pointer items-center justify-center px-[2px]"
+                style={{
+                  '--icon-size': '32px',
+                  width: '32px',
+                  height: '32px',
+                  transition: 'width 150ms cubic-bezier(0.25, 1, 0.5, 1), height 150ms cubic-bezier(0.25, 1, 0.5, 1), margin-top 150ms cubic-bezier(0.25, 1, 0.5, 1)',
+                } as React.CSSProperties}
+                onMouseEnter={() => setHoveredAbility(i)}
+                onMouseLeave={() => setHoveredAbility(null)}
+              >
+                <div className={cn(
+                  "relative aspect-square w-full rounded-[10px] border p-0.5 transition-colors",
+                  "border-lol-light/20 bg-gradient-to-t from-lol-gray to-lol-dark hover:border-lol-gold/40 hover:from-lol-gold/10 hover:to-lol-dark"
+                )}>
+                  {/* Ability name tooltip (like DockIcon) */}
+                  <span className="absolute top-[-32px] left-1/2 -translate-x-1/2 rounded-md border border-lol-gold/30 bg-lol-dark px-2 py-0.5 text-[10px] whitespace-nowrap text-lol-light opacity-0 transition-opacity duration-200 group-hover/ability:opacity-100 z-50 pointer-events-none">
+                    {ability.name}
+                  </span>
+                  <img
+                    src={ability.icon}
+                    alt={ability.name}
+                    className={cn(
+                      'h-full w-full object-contain',
+                      i === 0 ? 'rounded-full' : 'rounded-[inherit]'
+                    )}
+                  />
+                  <span className="absolute -bottom-0.5 -right-0.5 text-[8px] font-bold bg-lol-dark/90 text-lol-light/70 px-0.5 rounded">
+                    {ability.key}
+                  </span>
+                </div>
+
+                {/* Rich hover tooltip (description) — anchored to right */}
+                {hoveredAbility === i && (
+                  <GlowingTooltip className="absolute z-50 top-full left-0 mt-2 w-60 pointer-events-none">
+                    <div className="p-2.5">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <img src={ability.icon} alt={ability.name} className="w-6 h-6 rounded" />
+                        <span className="text-white text-xs font-semibold">{ability.name}</span>
+                        <span className="text-lol-gold/60 text-[10px]">{ability.key}</span>
+                      </div>
+                      <p
+                        className="text-[10px] text-lol-light/80 leading-relaxed"
+                        dangerouslySetInnerHTML={{ __html: ability.description }}
+                      />
+                    </div>
+                  </GlowingTooltip>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Role Selector (Dock) + Rank Dropdown */}
       <div className="flex items-center justify-between border-b border-lol-gold/10 bg-lol-gray/30 px-2 py-1.5">
@@ -209,7 +281,7 @@ export function BuildCard({
 
       {/* Tabs */}
       <div className="flex border-b border-lol-gold/10">
-        {(['runes', 'items', 'skills'] as const).map((tab) => (
+        {(['runes', 'items'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -228,13 +300,10 @@ export function BuildCard({
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {activeTab === 'runes' && (
-          <RuneSection runes={currentBuild.runes} onPush={handlePushRunes} />
+          <RuneSection runes={currentBuild.runes} skills={currentBuild.skills} onPush={handlePushRunes} />
         )}
         {activeTab === 'items' && (
           <ItemSection items={currentBuild.items} onPush={handlePushItems} />
-        )}
-        {activeTab === 'skills' && (
-          <SkillOrder skills={currentBuild.skills} />
         )}
       </div>
 

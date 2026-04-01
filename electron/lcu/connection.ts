@@ -15,6 +15,10 @@ export class LCUConnection {
     this.lockfilePath = lockfilePath
   }
 
+  setLockfilePath(lockfilePath: string) {
+    this.lockfilePath = lockfilePath
+  }
+
   /**
    * Read and parse the lockfile to extract LCU credentials.
    * Lockfile format: processName:pid:port:password:protocol

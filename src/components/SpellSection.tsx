@@ -1,4 +1,5 @@
 import { SpellInfo } from '../types'
+import { NeonButton } from './ui/neon-button'
 
 interface SpellSectionProps {
   spells: SpellInfo[]
@@ -70,12 +71,9 @@ export function SpellSection({ spells, swapped, onSwap, onPush }: SpellSectionPr
         </div>
       </div>
 
-      <button
-        onClick={onPush}
-        className="px-3 py-1 bg-lol-red/20 hover:bg-lol-red/30 text-lol-red text-[10px] font-semibold rounded transition flex items-center gap-1"
-      >
-        Push Spells {'\u25B6\u25B6'}
-      </button>
+      <NeonButton onClick={onPush} variant="red" size="sm" className="text-lol-red text-[10px] font-semibold">
+        Push Spells ▶▶
+      </NeonButton>
     </div>
   )
 }

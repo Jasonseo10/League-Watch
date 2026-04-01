@@ -35,6 +35,31 @@ interface ItemData {
   gold: { total: number }
 }
 
+export interface AbilityData {
+  key: string    // 'P', 'Q', 'W', 'E', 'R'
+  name: string
+  description: string
+  icon: string
+}
+
+export interface ChampionAbilities {
+  passive: AbilityData
+  spells: AbilityData[]  // Q, W, E, R
+}
+
+// Stat shards are not in DDragon's runesReforged.json — they use separate IDs
+const STAT_SHARDS: Record<number, { name: string; icon: string }> = {
+  5001: { name: 'Health Scaling', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodshealthscalingicon.png' },
+  5002: { name: 'Armor', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsarmoricon.png' },
+  5003: { name: 'Magic Resist', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsmagicresicon.png' },
+  5005: { name: 'Attack Speed', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsattackspeedicon.png' },
+  5007: { name: 'Ability Haste', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodscdrscalingicon.png' },
+  5008: { name: 'Adaptive Force', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsadaptiveforceicon.png' },
+  5010: { name: 'Move Speed', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsmovespeedicon.png' },
+  5011: { name: 'Health', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodshealthplusicon.png' },
+  5013: { name: 'Tenacity', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodstenacityicon.png' },
+}
+
 export class DataDragonService {
   private version: string = ''
   private champions: Map<number, ChampionData> = new Map()
@@ -171,6 +196,10 @@ export class DataDragonService {
     return this.runes
   }
 
+  getStatShard(id: number): { name: string; icon: string } | undefined {
+    return STAT_SHARDS[id]
+  }
+
   getSummonerSpell(id: number): SummonerSpellData | undefined {
     return this.summonerSpells.get(id)
   }
@@ -200,6 +229,46 @@ export class DataDragonService {
         return `${base}/img/passive/${key}`
       default:
         return ''
+    }
+  }
+
+  /**
+   * Fetch detailed champion abilities (passive + Q/W/E/R).
+   * Results are cached per champion ID.
+   */
+  private abilityCache: Map<string, ChampionAbilities> = new Map()
+
+  async getChampionAbilities(ddragonId: string): Promise<ChampionAbilities | null> {
+    const cached = this.abilityCache.get(ddragonId)
+    if (cached) return cached
+
+    try {
+      const url = `https://ddragon.leagueoflegends.com/cdn/${this.version}/data/en_US/champion/${ddragonId}.json`
+      const response = await axios.get(url)
+      const champData = response.data.data[ddragonId]
+
+      const base = `https://ddragon.leagueoflegends.com/cdn/${this.version}`
+
+      const passive: AbilityData = {
+        key: 'P',
+        name: champData.passive.name,
+        description: champData.passive.description,
+        icon: `${base}/img/passive/${champData.passive.image.full}`,
+      }
+
+      const spells: AbilityData[] = champData.spells.map((spell: any, i: number) => ({
+        key: ['Q', 'W', 'E', 'R'][i],
+        name: spell.name,
+        description: spell.description,
+        icon: `${base}/img/spell/${spell.image.full}`,
+      }))
+
+      const abilities: ChampionAbilities = { passive, spells }
+      this.abilityCache.set(ddragonId, abilities)
+      return abilities
+    } catch (err: any) {
+      console.error(`[DDragon] Failed to fetch abilities for ${ddragonId}:`, err.message)
+      return null
     }
   }
 

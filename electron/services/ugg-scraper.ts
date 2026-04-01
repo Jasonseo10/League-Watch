@@ -312,6 +312,11 @@ export class UGGScraper {
 
     const allPerkIds = [keystoneId, ...primaryPerks, ...subPerks, ...shardIds]
 
+    const statShards = shardIds.map(id => {
+      const shard = this.ddragon.getStatShard(id)
+      return { id, name: shard?.name ?? `Shard ${id}`, icon: shard?.icon ?? '' }
+    })
+
     const runes: BuildData['runes'] = {
       primaryTree:   primaryTreeInfo?.name ?? '',
       primaryTreeId: primaryStyleId,
@@ -320,7 +325,7 @@ export class UGGScraper {
       keystone:      this.runeIdToInfo(keystoneId),
       primaryPerks:  primaryPerks.map(id => this.runeIdToInfo(id)),
       subPerks:      subPerks.map(id => this.runeIdToInfo(id)),
-      statShards:    shardIds,
+      statShards,
       allPerkIds,
     }
 

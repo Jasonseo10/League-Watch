@@ -18,6 +18,9 @@ export default {
         'beaufort': ['"Beaufort for LOL"', 'serif'],
         'spiegel': ['Spiegel', 'sans-serif'],
       },
+      animation: {
+        'spin-slow': 'spin 4s linear infinite',
+      },
     },
   },
   plugins: [],

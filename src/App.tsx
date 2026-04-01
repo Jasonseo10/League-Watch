@@ -6,11 +6,21 @@ import { AnimatedBorder } from './components/ui/animated-border'
 
 const dragStyle = { WebkitAppRegion: 'drag' } as React.CSSProperties
 
+/** Convert DDragon version (e.g. "16.6.1") to display patch (e.g. "26.6") */
+function toDisplayPatch(ddragonVersion: string): string {
+  if (!ddragonVersion) return ''
+  const parts = ddragonVersion.split('.')
+  const major = parseInt(parts[0], 10)
+  const minor = parts[1]
+  return `${major + 10}.${minor}`
+}
+
 function App() {
 
   const {
     lcuStatus,
     champion,
+    abilities,
     builds,
     availableRoles,
     selectedRole,
@@ -25,7 +35,7 @@ function App() {
     pushSpells,
   } = useLeagueData()
 
-  const [ddragonVersion, setDdragonVersion] = useState('16.6.1')
+  const [ddragonVersion, setDdragonVersion] = useState('')
 
   useEffect(() => {
     if (window.leagueWatch) {
@@ -56,7 +66,7 @@ function App() {
         <div className="w-full h-full flex flex-col items-center justify-center p-6 cursor-move" style={dragStyle}>
           <div className="text-center mb-4">
             <h1 className="text-lol-gold text-xl font-bold tracking-wide">LEAGUE WATCH</h1>
-            <p className="text-lol-light/60 text-xs mt-1">Patch {ddragonVersion}</p>
+            <p className="text-lol-light/60 text-xs mt-1">Patch {toDisplayPatch(ddragonVersion)}</p>
           </div>
           <StatusIndicator status={lcuStatus} />
           <p className="text-center text-sm text-lol-light mt-4">
@@ -120,6 +130,7 @@ function App() {
           onPushSpells={pushSpells}
           ddragonVersion={ddragonVersion}
           isLoading={isLoading}
+          abilities={abilities}
         />
       )
     }
