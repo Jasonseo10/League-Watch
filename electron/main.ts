@@ -360,6 +360,25 @@ function setupIPC() {
   ipcMain.handle('ddragon:champion-abilities', (_event, ddragonId: string) => {
     return ddragon.getChampionAbilities(ddragonId)
   })
+
+  ipcMain.handle('ugg:tier-list', async (_event, rank: string) => {
+    return scraper.getTierList(rank)
+  })
+
+  ipcMain.handle('ugg:counters', async (_event, champKey: number, roleCode: string, rank: string) => {
+    return scraper.getCounters(champKey, roleCode, rank)
+  })
+
+  // Resize overlay width while keeping the right edge anchored to screen
+  ipcMain.handle('window:set-width', (_event, targetWidth: number) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    const [currentX, currentY] = mainWindow.getPosition()
+    const [currentWidth, currentHeight] = mainWindow.getSize()
+    const delta = targetWidth - currentWidth
+    const newX = currentX - delta // shift left so right edge stays in place
+    mainWindow.setBounds({ x: newX, y: currentY, width: targetWidth, height: currentHeight }, false)
+    console.log(`[League Watch] Window resized to ${targetWidth}px (x: ${currentX} → ${newX})`)
+  })
 }
 
 app.whenReady().then(async () => {

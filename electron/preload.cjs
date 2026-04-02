@@ -29,4 +29,7 @@ contextBridge.exposeInMainWorld('leagueWatch', {
   getDDragonVersion: () => ipcRenderer.invoke('ddragon:version'),
   getAssetUrl: (type, key) => ipcRenderer.invoke('ddragon:asset-url', type, key),
   getChampionAbilities: (ddragonId) => ipcRenderer.invoke('ddragon:champion-abilities', ddragonId),
+  getTierList: (rank) => ipcRenderer.invoke('ugg:tier-list', rank),
+  getCounters: (champKey, roleCode, rank) => ipcRenderer.invoke('ugg:counters', champKey, roleCode, rank),
+  setWindowWidth: (width) => ipcRenderer.invoke('window:set-width', width),
 });

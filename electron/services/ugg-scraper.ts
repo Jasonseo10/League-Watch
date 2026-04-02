@@ -63,6 +63,27 @@ export interface AllRoleBuilds {
   rank: string
 }
 
+export interface CounterChamp {
+  championKey: number
+  championName: string
+  championDDragonId: string
+}
+
+export interface TierEntry {
+  tier: 'S' | 'A' | 'B' | 'C' | 'D'
+  roleCode: string
+  role: string
+  championKey: number
+  championName: string
+  championDDragonId: string
+  winRate: string
+  winRateNum: number
+  pickRate: string
+  banRate: string
+  games: number
+  counters: CounterChamp[]
+}
+
 // u.gg role codes used in their API
 const UGG_ROLE_CODES: Record<string, string> = {
   'jungle':  '1',
@@ -123,7 +144,10 @@ export class UGGScraper {
 
       this.currentPatch = patchesRes.data[0] as string
       const versions = versionsRes.data
-      this.apiVersion = versions[this.currentPatch]?.overview || '1.5.0'
+      const patchVersions = versions[this.currentPatch] ?? {}
+      // Log all available version keys so we can find the right one for rankings
+      console.log(`[Scraper] API version keys for ${this.currentPatch}:`, JSON.stringify(patchVersions))
+      this.apiVersion = patchVersions.overview || '1.5.0'
 
       console.log(`[Scraper] u.gg meta: patch=${this.currentPatch}, apiVersion=${this.apiVersion}`)
     } catch (err: any) {
@@ -433,6 +457,214 @@ export class UGGScraper {
       name: item.name,
       icon: this.ddragon.getAssetUrl('item', `${id}`),
     }
+  }
+
+  // === Tier List ===
+
+  // Cache tier list to avoid re-fetching all 172 champions every render
+  // Bump this version string whenever the scoring algorithm changes to bust stale cache
+  private readonly TIER_CACHE_VERSION = 'v2-wilson'
+  private tierListCache: Map<string, { data: TierEntry[]; timestamp: number; version: string }> = new Map()
+  private readonly tierListCacheTTL = 20 * 60 * 1000 // 20 minutes
+
+  /**
+   * Build the tier list by batch-fetching per-champion overview data.
+   * The per-champion overview endpoint is publicly accessible (unlike the
+   * bulk champion_ranking endpoint which requires authentication).
+   */
+  async getTierList(rank: string = DEFAULT_RANK): Promise<TierEntry[]> {
+    const cacheKey = rank
+    const cached = this.tierListCache.get(cacheKey)
+    if (
+      cached &&
+      cached.version === this.TIER_CACHE_VERSION &&
+      Date.now() - cached.timestamp < this.tierListCacheTTL
+    ) {
+      console.log(`[Scraper] Tier list cache hit for rank=${rank} (${cached.data.length} entries)`)
+      return cached.data
+    }
+
+    await this.fetchMeta()
+
+    const allChampions = this.ddragon.getAllChampions()
+    console.log(`[Scraper] Building tier list from ${allChampions.length} champions...`)
+
+    const entries: TierEntry[] = []
+    const BATCH_SIZE = 15
+
+    for (let i = 0; i < allChampions.length; i += BATCH_SIZE) {
+      const batch = allChampions.slice(i, i + BATCH_SIZE)
+      const results = await Promise.allSettled(
+        batch.map(champ => this.fetchRawData(champ.slug))
+      )
+
+      for (let j = 0; j < results.length; j++) {
+        const result = results[j]
+        if (result.status !== 'fulfilled' || !result.value) continue
+        const { data: rawData } = result.value
+        const champ = batch[j]
+
+        for (const [roleName, roleCode] of Object.entries(UGG_ROLE_CODES)) {
+          let buildArray = this.findBuildArrayForRank(rawData, roleCode, rank)
+          if (!buildArray) {
+            for (const fallback of RANK_FALLBACK) {
+              if (fallback === rank) continue
+              buildArray = this.findBuildArrayForRank(rawData, roleCode, fallback)
+              if (buildArray) break
+            }
+          }
+          if (!buildArray) continue
+
+          const overallRaw = buildArray[6] || []
+          const wins = overallRaw[0] ?? 0
+          const total = overallRaw[1] ?? 0
+
+          // Ban rate is not available in the per-champion overview endpoint
+          const banRate = 'N/A'
+
+          // Require at least 300 games for statistical validity
+          // (low-sample off-meta picks can have misleadingly high raw win rates)
+          if (total < 300) continue
+
+          const winRateNum = total > 0 ? (wins / total) * 100 : 0
+          // Wilson score gives the lower bound of the 95% confidence interval —
+          // naturally penalises small samples, matching how U.gg ranks champions
+          const wilsonScore = this.wilsonScore(wins, total)
+
+          entries.push({
+            tier: this.wilsonToTier(wilsonScore),
+            roleCode,
+            role: roleName,
+            championKey: parseInt(champ.key, 10),
+            championName: champ.name,
+            championDDragonId: champ.id,
+            winRate: `${winRateNum.toFixed(1)}%`,
+            winRateNum,
+            pickRate: 'N/A', // computed after all entries are collected
+            banRate,
+            games: total,
+            counters: [],
+            // Internal sort key (not exposed to UI)
+            _wilsonScore: wilsonScore,
+          } as TierEntry & { _wilsonScore: number })
+        }
+      }
+    }
+
+    // Compute approximate pick rate after all entries are collected.
+    // Pick rate = champion's games / (total dataset games / 10) * 100
+    // (divide by 10 because each match contributes 10 champion picks)
+    const totalDatasetGames = entries.reduce((sum, e) => sum + e.games, 0)
+    const approxMatchesInDataset = totalDatasetGames / 10
+    for (const entry of entries) {
+      entry.pickRate = approxMatchesInDataset > 0
+        ? `${((entry.games / approxMatchesInDataset) * 100).toFixed(1)}%`
+        : 'N/A'
+    }
+
+    // Sort by Wilson score — statistically corrected ranking
+    const sorted = (entries as Array<TierEntry & { _wilsonScore: number }>)
+      .sort((a, b) => b._wilsonScore - a._wilsonScore)
+      .map(({ _wilsonScore: _ws, ...entry }) => entry as TierEntry)
+
+    this.tierListCache.set(cacheKey, { data: sorted, timestamp: Date.now(), version: this.TIER_CACHE_VERSION })
+    console.log(`[Scraper] Tier list built: ${sorted.length} entries`)
+    return sorted
+  }
+
+  /**
+   * Wilson score lower bound (95% confidence interval).
+   * Returns a value in [0, 1] that shrinks toward 0.5 as n decreases —
+   * a champion with 100 games at 65% WR ranks below one with 5000 games at 54%.
+   */
+  private wilsonScore(wins: number, total: number): number {
+    if (total === 0) return 0
+    const p = wins / total
+    const z = 1.96 // 95% confidence
+    const n = total
+    const centre = p + (z * z) / (2 * n)
+    const margin = z * Math.sqrt((p * (1 - p) + (z * z) / (4 * n)) / n)
+    return (centre - margin) / (1 + (z * z) / n)
+  }
+
+  /**
+   * Assign tier from Wilson score lower bound.
+   * Thresholds tuned to match U.gg's typical tier distribution at Emerald+.
+   */
+  private wilsonToTier(ws: number): TierEntry['tier'] {
+    const pct = ws * 100
+    if (pct >= 53)   return 'S'
+    if (pct >= 51.5) return 'A'
+    if (pct >= 50)   return 'B'
+    if (pct >= 48.5) return 'C'
+    return 'D'
+  }
+
+  /**
+   * Fetch top-3 counter picks for a champion in a given role.
+   */
+  async getCounters(champKey: number, roleCode: string, rank: string = DEFAULT_RANK): Promise<CounterChamp[]> {
+    await this.fetchMeta()
+
+    const url = `https://stats2.u.gg/lol/1.5/counters/${this.currentPatch}/ranked_solo_5x5/${champKey}/${this.apiVersion}.json`
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Referer': `https://u.gg/lol/champions/counters`,
+      'Origin': 'https://u.gg',
+    }
+
+    console.log(`[Scraper] Fetching counters: ${url}`)
+    try {
+      const response = await axios.get(url, { timeout: 8000, headers })
+      const raw = response.data
+
+      for (const region of [DEFAULT_REGION, '1', '2', '3']) {
+        const regionData = raw[region]
+        if (!regionData) continue
+
+        let rankData: any = null
+        for (const r of [rank, ...RANK_FALLBACK]) {
+          if (regionData[r]) { rankData = regionData[r]; break }
+        }
+        if (!rankData) continue
+
+        const roleData = rankData[roleCode]
+        if (!roleData || !Array.isArray(roleData)) continue
+
+        // Counter response structure:
+        //   roleData[0] = [overallWins, overallTotal]
+        //   roleData[1] = array of matchup groups
+        //   roleData[1][0] = [[oppChampKey, role, wins, total], ...]
+        // where wins = target champion wins against that opponent (low = they counter us)
+        const matchupGroups = Array.isArray(roleData[1]) ? roleData[1] : []
+        const flatEntries: any[] = Array.isArray(matchupGroups[0]) ? matchupGroups[0] : []
+
+        const counters = flatEntries
+          .filter((e: any) => Array.isArray(e) && e.length >= 4 && (e[3] ?? 0) >= 20)
+          .map((e: any) => {
+            const oppKey = parseInt(e[0], 10)
+            const wins = e[2] ?? 0
+            const total = e[3] ?? 1
+            const winRate = wins / total
+            return { oppKey, winRate }
+          })
+          .sort((a: any, b: any) => a.winRate - b.winRate) // lowest target WR = hardest counter
+          .slice(0, 3)
+          .map(({ oppKey }: { oppKey: number }) => {
+            const champ = this.ddragon.getChampionById(oppKey)
+            if (!champ) return null
+            return { championKey: oppKey, championName: champ.name, championDDragonId: champ.id }
+          })
+          .filter(Boolean) as CounterChamp[]
+
+        console.log(`[Scraper] Counters for champKey=${champKey} roleCode=${roleCode}:`, counters.map(c => c.championName))
+        return counters
+      }
+    } catch (err: any) {
+      console.error(`[Scraper] Counters fetch failed for champKey=${champKey} (${err.response?.status ?? err.message}):`, url)
+    }
+
+    return []
   }
 
   private getFallbackBuild(role: string): BuildData[] {

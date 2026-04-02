@@ -3,6 +3,7 @@ import { useLeagueData } from './hooks/useLeagueData'
 import { BuildCard } from './components/BuildCard'
 import { StatusIndicator } from './components/StatusIndicator'
 import { AnimatedBorder } from './components/ui/animated-border'
+import { TierListTable } from './components/TierListTable'
 
 const dragStyle = { WebkitAppRegion: 'drag' } as React.CSSProperties
 
@@ -60,21 +61,23 @@ function App() {
       )
     }
 
-    // Connected but no champ select yet
+    // Connected but no champ select yet — show tier list
     if (!champion && !builds) {
       return (
-        <div className="w-full h-full flex flex-col items-center justify-center p-6 cursor-move" style={dragStyle}>
-          <div className="text-center mb-4">
-            <h1 className="text-lol-gold text-xl font-bold tracking-wide">LEAGUE WATCH</h1>
-            <p className="text-lol-light/60 text-xs mt-1">Patch {toDisplayPatch(ddragonVersion)}</p>
+        <div className="w-full h-full flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-lol-gold/15 flex-shrink-0" style={dragStyle}>
+            <div>
+              <h1 className="text-lol-gold text-sm font-bold tracking-wide leading-none">LEAGUE WATCH</h1>
+              <p className="text-lol-light/50 text-[10px] mt-0.5">Patch {toDisplayPatch(ddragonVersion)}</p>
+            </div>
+            <StatusIndicator status={lcuStatus} />
           </div>
-          <StatusIndicator status={lcuStatus} />
-          <p className="text-center text-sm text-lol-light mt-4">
-            Waiting for champion select...
-          </p>
-          <p className="text-center text-[10px] text-lol-light/30 mt-2">
-            Hover or select a champion to see builds
-          </p>
+
+          {/* Tier list fills remaining space */}
+          <div className="flex-1 overflow-hidden">
+            <TierListTable ddragonVersion={ddragonVersion} />
+          </div>
         </div>
       )
     }

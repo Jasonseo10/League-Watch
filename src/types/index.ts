@@ -91,6 +91,27 @@ export interface RankOption {
   code: string
 }
 
+export interface CounterChamp {
+  championKey: number
+  championName: string
+  championDDragonId: string
+}
+
+export interface TierEntry {
+  tier: 'S' | 'A' | 'B' | 'C' | 'D'
+  roleCode: string
+  role: string
+  championKey: number
+  championName: string
+  championDDragonId: string
+  winRate: string
+  winRateNum: number
+  pickRate: string
+  banRate: string
+  games: number
+  counters: CounterChamp[]
+}
+
 export interface LCUStatus {
   connected: boolean
   message: string
@@ -115,6 +136,9 @@ declare global {
       getDDragonVersion: () => Promise<string>
       getAssetUrl: (type: string, key: string) => Promise<string>
       getChampionAbilities: (ddragonId: string) => Promise<ChampionAbilities | null>
+      getTierList: (rank: string) => Promise<TierEntry[]>
+      getCounters: (champKey: number, roleCode: string, rank: string) => Promise<CounterChamp[]>
+      setWindowWidth: (width: number) => Promise<void>
     }
   }
 }
