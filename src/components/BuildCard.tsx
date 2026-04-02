@@ -7,7 +7,7 @@ import { ItemSection } from './ItemSection'
 import { SpellSection } from './SpellSection'
 import { AnimatedText } from './ui/animated-text'
 import { Dock, DockIcon } from './ui/dock'
-import { Menu, MenuItem } from './ui/fluid-menu'
+import { RankFluidSelector } from './ui/fluid-menu'
 import { cn } from '../lib/utils'
 import { GlowingTooltip } from './ui/glowing-tooltip'
 
@@ -198,27 +198,12 @@ export function BuildCard({
           })}
         </Dock>
 
-        {/* Rank Dropdown (Fluid Menu) */}
-        <Menu
-          trigger={
-            <span className="text-[11px] font-semibold text-lol-blue hover:text-white transition px-2 py-1 rounded">
-              {currentRankLabel}
-            </span>
-          }
-          align="right"
-          menuClassName="!w-32 !bg-lol-dark !ring-lol-gold/30 !rounded-lg"
-        >
-          {rankOptions.map((opt) => (
-            <MenuItem
-              key={opt.code}
-              onClick={() => handleRankChange(opt.code)}
-              isActive={opt.code === selectedRank}
-              compact
-            >
-              {opt.label}
-            </MenuItem>
-          ))}
-        </Menu>
+        {/* Rank Selector */}
+        <RankFluidSelector
+          options={rankOptions}
+          selected={selectedRank}
+          onChange={handleRankChange}
+        />
       </div>
 
       {/* Loading overlay for rank changes */}
