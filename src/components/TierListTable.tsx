@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { TierEntry, CounterChamp, RankOption, QueueOption, RegionOption } from '../types'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
-import { Menu, MenuItem } from './ui/fluid-menu'
+import { RankFluidSelector } from './ui/fluid-menu'
 import { cn } from '../lib/utils'
 
 /* ── Role icons (inline SVG paths matching u.gg style) ── */
@@ -156,8 +156,8 @@ export function TierListTable({ ddragonVersion }: TierListTableProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered.length, selectedRole, selectedRank, selectedQueue, selectedRegion])
 
-  const currentRankLabel  = rankOptions.find(r => r.code === selectedRank)?.label || 'Emerald+'
-  const currentQueueLabel = queueOptions.find(q => q.code === selectedQueue)?.label || 'Ranked Solo'
+  const currentRankLabel   = rankOptions.find(r => r.code === selectedRank)?.label   || 'Emerald+'
+  const currentQueueLabel  = queueOptions.find(q => q.code === selectedQueue)?.label  || 'Ranked Solo'
   const currentRegionLabel = regionOptions.find(r => r.code === selectedRegion)?.label || 'World'
 
   return (
@@ -191,74 +191,21 @@ export function TierListTable({ ddragonVersion }: TierListTableProps) {
 
           {/* Filter dropdowns */}
           <div className="flex items-center gap-1">
-            {/* Rank */}
-            <Menu
-              trigger={
-                <span className="text-[9px] font-semibold text-lol-blue hover:text-white transition px-1.5 py-0.5 rounded bg-lol-gray/40 border border-lol-light/10 whitespace-nowrap">
-                  {currentRankLabel}
-                </span>
-              }
-              align="right"
-              showChevron={false}
-              menuClassName="!w-28 !bg-lol-dark !ring-lol-gold/30 !rounded-lg"
-            >
-              {rankOptions.map(opt => (
-                <MenuItem
-                  key={opt.code}
-                  onClick={() => setSelectedRank(opt.code)}
-                  isActive={opt.code === selectedRank}
-                  compact
-                >
-                  {opt.label}
-                </MenuItem>
-              ))}
-            </Menu>
-
-            {/* Queue */}
-            <Menu
-              trigger={
-                <span className="text-[9px] font-semibold text-lol-blue hover:text-white transition px-1.5 py-0.5 rounded bg-lol-gray/40 border border-lol-light/10 whitespace-nowrap">
-                  {currentQueueLabel}
-                </span>
-              }
-              align="right"
-              showChevron={false}
-              menuClassName="!w-28 !bg-lol-dark !ring-lol-gold/30 !rounded-lg"
-            >
-              {queueOptions.map(opt => (
-                <MenuItem
-                  key={opt.code}
-                  onClick={() => setSelectedQueue(opt.code)}
-                  isActive={opt.code === selectedQueue}
-                  compact
-                >
-                  {opt.label}
-                </MenuItem>
-              ))}
-            </Menu>
-
-            {/* Region */}
-            <Menu
-              trigger={
-                <span className="text-[9px] font-semibold text-lol-blue hover:text-white transition px-1.5 py-0.5 rounded bg-lol-gray/40 border border-lol-light/10 whitespace-nowrap">
-                  {currentRegionLabel}
-                </span>
-              }
-              align="right"
-              showChevron={false}
-              menuClassName="!w-24 !bg-lol-dark !ring-lol-gold/30 !rounded-lg"
-            >
-              {regionOptions.map(opt => (
-                <MenuItem
-                  key={opt.code}
-                  onClick={() => setSelectedRegion(opt.code)}
-                  isActive={opt.code === selectedRegion}
-                  compact
-                >
-                  {opt.label}
-                </MenuItem>
-              ))}
-            </Menu>
+            <RankFluidSelector
+              options={rankOptions}
+              selected={selectedRank}
+              onChange={setSelectedRank}
+            />
+            <RankFluidSelector
+              options={queueOptions}
+              selected={selectedQueue}
+              onChange={setSelectedQueue}
+            />
+            <RankFluidSelector
+              options={regionOptions}
+              selected={selectedRegion}
+              onChange={setSelectedRegion}
+            />
           </div>
         </div>
 
