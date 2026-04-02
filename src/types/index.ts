@@ -94,6 +94,16 @@ export interface RankOption {
   code: string
 }
 
+export interface QueueOption {
+  label: string
+  code: string
+}
+
+export interface RegionOption {
+  label: string
+  code: string
+}
+
 export interface CounterChamp {
   championKey: number
   championName: string
@@ -139,8 +149,10 @@ declare global {
       getDDragonVersion: () => Promise<string>
       getAssetUrl: (type: string, key: string) => Promise<string>
       getChampionAbilities: (ddragonId: string) => Promise<ChampionAbilities | null>
-      getTierList: (rank: string) => Promise<TierEntry[]>
-      getCounters: (champKey: number, roleCode: string, rank: string) => Promise<CounterChamp[]>
+      getTierList: (rank: string, queue: string, region: string) => Promise<TierEntry[]>
+      getCounters: (champKey: number, roleCode: string, rank: string, queue: string, region: string) => Promise<CounterChamp[]>
+      getQueueOptions: () => Promise<QueueOption[]>
+      getRegionOptions: () => Promise<RegionOption[]>
       setWindowWidth: (width: number) => Promise<void>
     }
   }

@@ -118,6 +118,35 @@ export const RANK_OPTIONS = [
   { label: 'Challenger',   code: '14' },
 ] as const
 
+// Queue type options
+export const QUEUE_OPTIONS = [
+  { label: 'Ranked Solo',  code: 'ranked_solo_5x5' },
+  { label: 'Ranked Flex',  code: 'ranked_flex_sr' },
+] as const
+
+const DEFAULT_QUEUE = 'ranked_solo_5x5'
+
+// Region options (u.gg region codes)
+export const REGION_OPTIONS = [
+  { label: 'World', code: '12' },
+  { label: 'NA',    code: '1'  },
+  { label: 'EUW',   code: '2'  },
+  { label: 'KR',    code: '3'  },
+  { label: 'EUNE',  code: '4'  },
+  { label: 'BR',    code: '5'  },
+  { label: 'LAN',   code: '6'  },
+  { label: 'LAS',   code: '7'  },
+  { label: 'OCE',   code: '8'  },
+  { label: 'JP',    code: '9'  },
+  { label: 'TR',    code: '10' },
+  { label: 'RU',    code: '11' },
+  { label: 'PH',    code: '13' },
+  { label: 'SG',    code: '14' },
+  { label: 'TH',    code: '15' },
+  { label: 'TW',    code: '16' },
+  { label: 'VN',    code: '17' },
+] as const
+
 const DEFAULT_RANK = '17' // Emerald+
 
 export class UGGScraper {
@@ -165,10 +194,11 @@ export class UGGScraper {
   /**
    * Fetch the raw API response for a champion, with caching.
    */
-  private async fetchRawData(championSlug: string): Promise<{ data: any; champName: string } | null> {
-    const cached = this.rawCache.get(championSlug)
+  private async fetchRawData(championSlug: string, queue: string = DEFAULT_QUEUE): Promise<{ data: any; champName: string } | null> {
+    const cacheKey = `${championSlug}:${queue}`
+    const cached = this.rawCache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
-      console.log(`[Scraper] Raw cache hit: ${championSlug}`)
+      console.log(`[Scraper] Raw cache hit: ${cacheKey}`)
       const champion = this.ddragon.getChampionBySlug(championSlug)
       return { data: cached.data, champName: champion?.name ?? championSlug }
     }
@@ -181,12 +211,12 @@ export class UGGScraper {
       return null
     }
 
-    const url = `https://stats2.u.gg/lol/1.5/overview/${this.currentPatch}/ranked_solo_5x5/${champion.key}/${this.apiVersion}.json`
+    const url = `https://stats2.u.gg/lol/1.5/overview/${this.currentPatch}/${queue}/${champion.key}/${this.apiVersion}.json`
     console.log(`[Scraper] Fetching: ${url}`)
 
     try {
       const response = await axios.get(url, { timeout: 10000 })
-      this.rawCache.set(championSlug, { data: response.data, timestamp: Date.now() })
+      this.rawCache.set(cacheKey, { data: response.data, timestamp: Date.now() })
       return { data: response.data, champName: champion.name }
     } catch (err: any) {
       console.error(`[Scraper] API request failed: ${err.message}`)
@@ -257,10 +287,11 @@ export class UGGScraper {
   /**
    * Find build data for a specific role at a specific rank.
    */
-  private findBuildArrayForRank(data: any, roleCode: string, rank: string): any[] | null {
-    for (const region of [DEFAULT_REGION, '1', '2', '3']) {
-      if (!data[region]) continue
-      const roleEntry = data[region]?.[rank]?.[roleCode]
+  private findBuildArrayForRank(data: any, roleCode: string, rank: string, region?: string): any[] | null {
+    const regions = region ? [region, DEFAULT_REGION] : [DEFAULT_REGION, '1', '2', '3']
+    for (const r of regions) {
+      if (!data[r]) continue
+      const roleEntry = data[r]?.[rank]?.[roleCode]
       if (!roleEntry) continue
       const buildDataArray = Array.isArray(roleEntry) ? roleEntry[0] : null
       if (buildDataArray && Array.isArray(buildDataArray) && buildDataArray.length > 6) {
@@ -478,22 +509,22 @@ export class UGGScraper {
    * The per-champion overview endpoint is publicly accessible (unlike the
    * bulk champion_ranking endpoint which requires authentication).
    */
-  async getTierList(rank: string = DEFAULT_RANK): Promise<TierEntry[]> {
-    const cacheKey = rank
+  async getTierList(rank: string = DEFAULT_RANK, queue: string = DEFAULT_QUEUE, region: string = DEFAULT_REGION): Promise<TierEntry[]> {
+    const cacheKey = `${rank}:${queue}:${region}`
     const cached = this.tierListCache.get(cacheKey)
     if (
       cached &&
       cached.version === this.TIER_CACHE_VERSION &&
       Date.now() - cached.timestamp < this.tierListCacheTTL
     ) {
-      console.log(`[Scraper] Tier list cache hit for rank=${rank} (${cached.data.length} entries)`)
+      console.log(`[Scraper] Tier list cache hit for rank=${rank} queue=${queue} region=${region} (${cached.data.length} entries)`)
       return cached.data
     }
 
     await this.fetchMeta()
 
     const allChampions = this.ddragon.getAllChampions()
-    console.log(`[Scraper] Building tier list from ${allChampions.length} champions...`)
+    console.log(`[Scraper] Building tier list from ${allChampions.length} champions (rank=${rank}, queue=${queue}, region=${region})...`)
 
     const entries: TierEntry[] = []
     const BATCH_SIZE = 15
@@ -501,7 +532,7 @@ export class UGGScraper {
     for (let i = 0; i < allChampions.length; i += BATCH_SIZE) {
       const batch = allChampions.slice(i, i + BATCH_SIZE)
       const results = await Promise.allSettled(
-        batch.map(champ => this.fetchRawData(champ.slug))
+        batch.map(champ => this.fetchRawData(champ.slug, queue))
       )
 
       for (let j = 0; j < results.length; j++) {
@@ -511,11 +542,11 @@ export class UGGScraper {
         const champ = batch[j]
 
         for (const [roleName, roleCode] of Object.entries(UGG_ROLE_CODES)) {
-          let buildArray = this.findBuildArrayForRank(rawData, roleCode, rank)
+          let buildArray = this.findBuildArrayForRank(rawData, roleCode, rank, region)
           if (!buildArray) {
             for (const fallback of RANK_FALLBACK) {
               if (fallback === rank) continue
-              buildArray = this.findBuildArrayForRank(rawData, roleCode, fallback)
+              buildArray = this.findBuildArrayForRank(rawData, roleCode, fallback, region)
               if (buildArray) break
             }
           }
@@ -609,10 +640,10 @@ export class UGGScraper {
   /**
    * Fetch top-3 counter picks for a champion in a given role.
    */
-  async getCounters(champKey: number, roleCode: string, rank: string = DEFAULT_RANK): Promise<CounterChamp[]> {
+  async getCounters(champKey: number, roleCode: string, rank: string = DEFAULT_RANK, queue: string = DEFAULT_QUEUE, region: string = DEFAULT_REGION): Promise<CounterChamp[]> {
     await this.fetchMeta()
 
-    const url = `https://stats2.u.gg/lol/1.5/counters/${this.currentPatch}/ranked_solo_5x5/${champKey}/${this.apiVersion}.json`
+    const url = `https://stats2.u.gg/lol/1.5/counters/${this.currentPatch}/${queue}/${champKey}/${this.apiVersion}.json`
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       'Referer': `https://u.gg/lol/champions/counters`,
@@ -624,8 +655,9 @@ export class UGGScraper {
       const response = await axios.get(url, { timeout: 8000, headers })
       const raw = response.data
 
-      for (const region of [DEFAULT_REGION, '1', '2', '3']) {
-        const regionData = raw[region]
+      const regionFallback = region !== DEFAULT_REGION ? [region, DEFAULT_REGION] : [DEFAULT_REGION, '1', '2', '3']
+      for (const r of regionFallback) {
+        const regionData = raw[r]
         if (!regionData) continue
 
         let rankData: any = null

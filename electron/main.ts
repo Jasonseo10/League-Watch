@@ -7,7 +7,7 @@ import { LCUConnection } from './lcu/connection'
 import { LCUWebSocket } from './lcu/websocket'
 import { LCUApi } from './lcu/api'
 import { DataDragonService } from './services/ddragon'
-import { UGGScraper, RANK_OPTIONS } from './services/ugg-scraper'
+import { UGGScraper, RANK_OPTIONS, QUEUE_OPTIONS, REGION_OPTIONS } from './services/ugg-scraper'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -361,12 +361,20 @@ function setupIPC() {
     return ddragon.getChampionAbilities(ddragonId)
   })
 
-  ipcMain.handle('ugg:tier-list', async (_event, rank: string) => {
-    return scraper.getTierList(rank)
+  ipcMain.handle('ugg:tier-list', async (_event, rank: string, queue: string, region: string) => {
+    return scraper.getTierList(rank, queue, region)
   })
 
-  ipcMain.handle('ugg:counters', async (_event, champKey: number, roleCode: string, rank: string) => {
-    return scraper.getCounters(champKey, roleCode, rank)
+  ipcMain.handle('ugg:counters', async (_event, champKey: number, roleCode: string, rank: string, queue: string, region: string) => {
+    return scraper.getCounters(champKey, roleCode, rank, queue, region)
+  })
+
+  ipcMain.handle('ugg:get-queue-options', () => {
+    return QUEUE_OPTIONS.map(q => ({ label: q.label, code: q.code }))
+  })
+
+  ipcMain.handle('ugg:get-region-options', () => {
+    return REGION_OPTIONS.map(r => ({ label: r.label, code: r.code }))
   })
 
   // Resize overlay width while keeping the right edge anchored to screen

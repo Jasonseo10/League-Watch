@@ -1,17 +1,69 @@
 import { useState, useEffect, useRef } from 'react'
-import { TierEntry, CounterChamp } from '../types'
+import { TierEntry, CounterChamp, RankOption, QueueOption, RegionOption } from '../types'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
+import { Menu, MenuItem } from './ui/fluid-menu'
 import { cn } from '../lib/utils'
 
+/* ── Role icons (inline SVG paths matching u.gg style) ── */
 const ROLES = [
-  { label: 'All',  code: 'all', icon: '⚔' },
-  { label: 'Top',  code: '4',   icon: '🛡' },
-  { label: 'JGL',  code: '1',   icon: '🌲' },
-  { label: 'Mid',  code: '5',   icon: '🔮' },
-  { label: 'ADC',  code: '3',   icon: '🏹' },
-  { label: 'Sup',  code: '2',   icon: '💊' },
+  { label: 'All',  code: 'all' },
+  { label: 'Top',  code: '4'   },
+  { label: 'JGL',  code: '1'   },
+  { label: 'Mid',  code: '5'   },
+  { label: 'ADC',  code: '3'   },
+  { label: 'Sup',  code: '2'   },
 ]
+
+// Compact role icon SVGs (16×16)
+function RoleIcon({ code, className }: { code: string; className?: string }) {
+  const cls = cn('w-3.5 h-3.5', className)
+  switch (code) {
+    case 'all':
+      return (
+        <svg className={cls} viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 1l2.5 5H14l-4 3.5 1.5 5.5L8 12l-3.5 3 1.5-5.5L2 6h3.5z" />
+        </svg>
+      )
+    case '4': // Top
+      return (
+        <svg className={cls} viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 2h5v5H2zM2 9h3v5H2zM9 2h5v3H9zM9 7h5v7H9z" opacity="0.3" />
+          <path d="M2 2h5v5H2z" opacity="1" />
+        </svg>
+      )
+    case '1': // Jungle
+      return (
+        <svg className={cls} viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 1C5 4 3 7 3 10a5 5 0 0010 0c0-3-2-6-5-9zm0 12a3 3 0 01-3-3c0-1.5 1-3.5 3-6 2 2.5 3 4.5 3 6a3 3 0 01-3 3z" />
+        </svg>
+      )
+    case '5': // Mid
+      return (
+        <svg className={cls} viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 2h12v12H2z" opacity="0.15" />
+          <path d="M2 2h4v4H2zM10 10h4v4H10z" opacity="0.3" />
+          <path d="M2 2l12 12" stroke="currentColor" strokeWidth="2.5" fill="none" opacity="0.9" />
+        </svg>
+      )
+    case '3': // ADC
+      return (
+        <svg className={cls} viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 2h5v5H2zM2 9h3v5H2zM9 2h5v3H9zM9 7h5v7H9z" opacity="0.3" />
+          <path d="M9 7h5v7H9z" opacity="1" />
+        </svg>
+      )
+    case '2': // Support
+      return (
+        <svg className={cls} viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 3a2 2 0 100 4 2 2 0 000-4zM4 10c0-1.5 2-2.5 4-2.5s4 1 4 2.5v1H4v-1z" />
+          <path d="M13 5l-1.5 1.5M3 5l1.5 1.5M8 1v1.5" stroke="currentColor" strokeWidth="1.2" fill="none" />
+        </svg>
+      )
+    default:
+      return null
+  }
+}
 
 const TIER_COLORS: Record<string, string> = {
   S: 'text-yellow-300 border-yellow-400/40 bg-yellow-400/10',
@@ -32,13 +84,21 @@ interface TierListTableProps {
 }
 
 export function TierListTable({ ddragonVersion }: TierListTableProps) {
-  const [entries,     setEntries]     = useState<TierEntry[]>([])
-  const [loading,     setLoading]     = useState(true)
+  const [entries,      setEntries]      = useState<TierEntry[]>([])
+  const [loading,      setLoading]      = useState(true)
   const [selectedRole, setSelectedRole] = useState('all')
-  // counterMap: "champKey-roleCode" → CounterChamp[] (only set when loaded)
-  const [counterMap,  setCounterMap]  = useState<Record<string, CounterChamp[]>>({})
-  // pendingSet tracks which keys are currently being fetched (avoids duplicate requests)
+  const [counterMap,   setCounterMap]   = useState<Record<string, CounterChamp[]>>({})
   const pendingRef = useRef<Set<string>>(new Set())
+
+  // Filter state
+  const [selectedRank,   setSelectedRank]   = useState('17')
+  const [selectedQueue,  setSelectedQueue]  = useState('ranked_solo_5x5')
+  const [selectedRegion, setSelectedRegion] = useState('12')
+
+  // Options loaded from backend
+  const [rankOptions,   setRankOptions]   = useState<RankOption[]>([])
+  const [queueOptions,  setQueueOptions]  = useState<QueueOption[]>([])
+  const [regionOptions, setRegionOptions] = useState<RegionOption[]>([])
 
   // Widen overlay on mount, restore on unmount
   useEffect(() => {
@@ -46,61 +106,160 @@ export function TierListTable({ ddragonVersion }: TierListTableProps) {
     return () => { window.leagueWatch?.setWindowWidth(BUILD_WIDTH) }
   }, [])
 
-  // Fetch tier list once on mount
+  // Load filter options once
+  useEffect(() => {
+    if (!window.leagueWatch) return
+    Promise.all([
+      window.leagueWatch.getRankOptions(),
+      window.leagueWatch.getQueueOptions(),
+      window.leagueWatch.getRegionOptions(),
+    ]).then(([ranks, queues, regions]) => {
+      setRankOptions(ranks)
+      setQueueOptions(queues)
+      setRegionOptions(regions)
+    })
+  }, [])
+
+  // Fetch tier list when filters change
   useEffect(() => {
     if (!window.leagueWatch) return
     setLoading(true)
-    window.leagueWatch.getTierList('17')
+    setCounterMap({})
+    pendingRef.current.clear()
+    window.leagueWatch.getTierList(selectedRank, selectedQueue, selectedRegion)
       .then(data => { setEntries(data); setLoading(false) })
       .catch(() => setLoading(false))
-  }, [])
+  }, [selectedRank, selectedQueue, selectedRegion])
 
   const filtered = selectedRole === 'all'
     ? entries
     : entries.filter(e => e.roleCode === selectedRole)
 
-  // Fetch counters for visible entries (up to 30) when role or entries change
+  // Fetch counters for visible entries
   useEffect(() => {
     if (!window.leagueWatch || filtered.length === 0) return
     const visible = filtered.slice(0, 30)
     for (const entry of visible) {
       const key = `${entry.championKey}-${entry.roleCode}`
-      if (counterMap[key] !== undefined) continue  // already have data
-      if (pendingRef.current.has(key)) continue     // already in-flight
+      if (counterMap[key] !== undefined) continue
+      if (pendingRef.current.has(key)) continue
       pendingRef.current.add(key)
-      window.leagueWatch.getCounters(entry.championKey, entry.roleCode, '17')
+      window.leagueWatch.getCounters(entry.championKey, entry.roleCode, selectedRank, selectedQueue, selectedRegion)
         .then(counters => {
           setCounterMap(prev => ({ ...prev, [key]: counters }))
         })
         .catch(() => {
-          setCounterMap(prev => ({ ...prev, [key]: [] })) // mark as loaded (empty)
+          setCounterMap(prev => ({ ...prev, [key]: [] }))
         })
         .finally(() => { pendingRef.current.delete(key) })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered.length, selectedRole])
+  }, [filtered.length, selectedRole, selectedRank, selectedQueue, selectedRegion])
+
+  const currentRankLabel  = rankOptions.find(r => r.code === selectedRank)?.label || 'Emerald+'
+  const currentQueueLabel = queueOptions.find(q => q.code === selectedQueue)?.label || 'Ranked Solo'
+  const currentRegionLabel = regionOptions.find(r => r.code === selectedRegion)?.label || 'World'
 
   return (
     <TooltipProvider delayDuration={200}>
       <div className="flex flex-col h-full">
 
-        {/* Role filter */}
-        <div className="flex items-center gap-1 px-2 pt-2 pb-1 border-b border-lol-gold/10 flex-shrink-0">
-          {ROLES.map(role => (
-            <button
-              key={role.code}
-              onClick={() => setSelectedRole(role.code)}
-              className={cn(
-                'flex-1 flex flex-col items-center py-1 rounded-lg text-[9px] font-semibold transition-all duration-150 border',
-                selectedRole === role.code
-                  ? 'bg-lol-gold/20 border-lol-gold/50 text-lol-gold'
-                  : 'bg-lol-gray/30 border-lol-light/10 text-lol-light/60 hover:border-lol-gold/30 hover:text-lol-light'
-              )}
+        {/* Filter bar: Roles + Dropdowns — all on one row */}
+        <div className="flex items-center gap-1.5 px-2 pt-2 pb-1.5 border-b border-lol-gold/10 flex-shrink-0">
+
+          {/* Compact role icons */}
+          <div className="flex items-center gap-0.5">
+            {ROLES.map(role => (
+              <button
+                key={role.code}
+                onClick={() => setSelectedRole(role.code)}
+                className={cn(
+                  'w-6 h-6 flex items-center justify-center rounded transition-all duration-150 border',
+                  selectedRole === role.code
+                    ? 'bg-lol-gold/20 border-lol-gold/50 text-lol-gold'
+                    : 'bg-lol-gray/30 border-transparent text-lol-light/40 hover:border-lol-gold/30 hover:text-lol-light/70'
+                )}
+                title={role.label}
+              >
+                <RoleIcon code={role.code} />
+              </button>
+            ))}
+          </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Filter dropdowns */}
+          <div className="flex items-center gap-1">
+            {/* Rank */}
+            <Menu
+              trigger={
+                <span className="text-[9px] font-semibold text-lol-blue hover:text-white transition px-1.5 py-0.5 rounded bg-lol-gray/40 border border-lol-light/10 whitespace-nowrap">
+                  {currentRankLabel}
+                </span>
+              }
+              align="right"
+              showChevron={false}
+              menuClassName="!w-28 !bg-lol-dark !ring-lol-gold/30 !rounded-lg"
             >
-              <span className="text-[11px] leading-none mb-0.5">{role.icon}</span>
-              {role.label}
-            </button>
-          ))}
+              {rankOptions.map(opt => (
+                <MenuItem
+                  key={opt.code}
+                  onClick={() => setSelectedRank(opt.code)}
+                  isActive={opt.code === selectedRank}
+                  compact
+                >
+                  {opt.label}
+                </MenuItem>
+              ))}
+            </Menu>
+
+            {/* Queue */}
+            <Menu
+              trigger={
+                <span className="text-[9px] font-semibold text-lol-blue hover:text-white transition px-1.5 py-0.5 rounded bg-lol-gray/40 border border-lol-light/10 whitespace-nowrap">
+                  {currentQueueLabel}
+                </span>
+              }
+              align="right"
+              showChevron={false}
+              menuClassName="!w-28 !bg-lol-dark !ring-lol-gold/30 !rounded-lg"
+            >
+              {queueOptions.map(opt => (
+                <MenuItem
+                  key={opt.code}
+                  onClick={() => setSelectedQueue(opt.code)}
+                  isActive={opt.code === selectedQueue}
+                  compact
+                >
+                  {opt.label}
+                </MenuItem>
+              ))}
+            </Menu>
+
+            {/* Region */}
+            <Menu
+              trigger={
+                <span className="text-[9px] font-semibold text-lol-blue hover:text-white transition px-1.5 py-0.5 rounded bg-lol-gray/40 border border-lol-light/10 whitespace-nowrap">
+                  {currentRegionLabel}
+                </span>
+              }
+              align="right"
+              showChevron={false}
+              menuClassName="!w-24 !bg-lol-dark !ring-lol-gold/30 !rounded-lg"
+            >
+              {regionOptions.map(opt => (
+                <MenuItem
+                  key={opt.code}
+                  onClick={() => setSelectedRegion(opt.code)}
+                  isActive={opt.code === selectedRegion}
+                  compact
+                >
+                  {opt.label}
+                </MenuItem>
+              ))}
+            </Menu>
+          </div>
         </div>
 
         {/* Table */}
@@ -131,7 +290,7 @@ export function TierListTable({ ddragonVersion }: TierListTableProps) {
               <TableBody>
                 {filtered.map((entry, i) => {
                   const counterKey = `${entry.championKey}-${entry.roleCode}`
-                  const counters = counterMap[counterKey]    // undefined = not yet loaded
+                  const counters = counterMap[counterKey]
                   const isPending = counterMap[counterKey] === undefined
                   return (
                     <TableRow key={`${entry.championKey}-${entry.roleCode}-${i}`}>
@@ -207,7 +366,6 @@ export function TierListTable({ ddragonVersion }: TierListTableProps) {
                       <TableCell className="px-1">
                         <div className="flex items-center gap-0.5">
                           {isPending ? (
-                            // Still loading
                             <div className="w-3 h-3 border border-lol-light/20 border-t-transparent rounded-full animate-spin" />
                           ) : !counters || counters.length === 0 ? (
                             <span className="text-lol-light/20 text-[9px]">—</span>
@@ -241,7 +399,7 @@ export function TierListTable({ ddragonVersion }: TierListTableProps) {
         {!loading && entries.length > 0 && (
           <div className="px-3 py-1 border-t border-lol-gold/10 flex-shrink-0">
             <p className="text-lol-light/30 text-[9px]">
-              {filtered.length} champions · Emerald+ · Patch data
+              {filtered.length} champions · {currentRankLabel} · {currentQueueLabel} · {currentRegionLabel}
             </p>
           </div>
         )}
