@@ -18,6 +18,8 @@ interface RuneData {
       key: string
       name: string
       icon: string
+      shortDesc?: string
+      longDesc?: string
     }>
   }>
 }
@@ -26,11 +28,14 @@ interface SummonerSpellData {
   id: string
   key: string // numeric ID as string
   name: string
+  description: string
   image: { full: string }
 }
 
 interface ItemData {
   name: string
+  description: string
+  plaintext: string
   image: { full: string }
   gold: { total: number }
 }
@@ -48,16 +53,16 @@ export interface ChampionAbilities {
 }
 
 // Stat shards are not in DDragon's runesReforged.json — they use separate IDs
-const STAT_SHARDS: Record<number, { name: string; icon: string }> = {
-  5001: { name: 'Health Scaling', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodshealthscalingicon.png' },
-  5002: { name: 'Armor', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsarmoricon.png' },
-  5003: { name: 'Magic Resist', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsmagicresicon.png' },
-  5005: { name: 'Attack Speed', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsattackspeedicon.png' },
-  5007: { name: 'Ability Haste', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodscdrscalingicon.png' },
-  5008: { name: 'Adaptive Force', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsadaptiveforceicon.png' },
-  5010: { name: 'Move Speed', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsmovespeedicon.png' },
-  5011: { name: 'Health', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodshealthplusicon.png' },
-  5013: { name: 'Tenacity', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodstenacityicon.png' },
+const STAT_SHARDS: Record<number, { name: string; icon: string; description: string }> = {
+  5001: { name: 'Health Scaling', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodshealthscalingicon.png', description: '+10-180 Health (based on level)' },
+  5002: { name: 'Armor', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsarmoricon.png', description: '+6 Armor' },
+  5003: { name: 'Magic Resist', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsmagicresicon.png', description: '+8 Magic Resist' },
+  5005: { name: 'Attack Speed', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsattackspeedicon.png', description: '+10% Attack Speed' },
+  5007: { name: 'Ability Haste', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodscdrscalingicon.png', description: '+8 Ability Haste' },
+  5008: { name: 'Adaptive Force', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsadaptiveforceicon.png', description: '+9 Adaptive Force' },
+  5010: { name: 'Move Speed', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodsmovespeedicon.png', description: '+2% Move Speed' },
+  5011: { name: 'Health', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodshealthplusicon.png', description: '+65 Health' },
+  5013: { name: 'Tenacity', icon: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/statmodstenacityicon.png', description: '+10% Tenacity and Slow Resist' },
 }
 
 export class DataDragonService {
@@ -65,7 +70,7 @@ export class DataDragonService {
   private champions: Map<number, ChampionData> = new Map()
   private championsBySlug: Map<string, ChampionData> = new Map()
   private runes: RuneData[] = []
-  private runesById: Map<number, { name: string; icon: string; treeName: string }> = new Map()
+  private runesById: Map<number, { name: string; icon: string; treeName: string; description: string }> = new Map()
   private summonerSpells: Map<number, SummonerSpellData> = new Map()
   private items: Map<number, ItemData> = new Map()
 
@@ -111,13 +116,18 @@ export class DataDragonService {
     // Build a flat lookup by rune ID
     for (const tree of this.runes) {
       // Store tree itself
-      this.runesById.set(tree.id, { name: tree.name, icon: tree.icon, treeName: tree.name })
+      this.runesById.set(tree.id, { name: tree.name, icon: tree.icon, treeName: tree.name, description: '' })
 
       // Store each rune in each slot
       if (tree.slots) {
         for (const slot of tree.slots) {
           for (const rune of slot.runes) {
-            this.runesById.set(rune.id, { name: rune.name, icon: rune.icon, treeName: tree.name })
+            this.runesById.set(rune.id, {
+              name: rune.name,
+              icon: rune.icon,
+              treeName: tree.name,
+              description: rune.shortDesc || rune.longDesc || '',
+            })
           }
         }
       }
@@ -188,7 +198,7 @@ export class DataDragonService {
     return this.championsBySlug.get(slug)
   }
 
-  getRuneById(id: number): { name: string; icon: string; treeName: string } | undefined {
+  getRuneById(id: number): { name: string; icon: string; treeName: string; description: string } | undefined {
     return this.runesById.get(id)
   }
 
@@ -196,7 +206,7 @@ export class DataDragonService {
     return this.runes
   }
 
-  getStatShard(id: number): { name: string; icon: string } | undefined {
+  getStatShard(id: number): { name: string; icon: string; description: string } | undefined {
     return STAT_SHARDS[id]
   }
 

@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { SpellInfo } from '../types'
 import { NeonButton } from './ui/neon-button'
+import { AnimatedIcon, TiltedIconRow } from './ui/animated-icon'
 
 interface SpellSectionProps {
   spells: SpellInfo[]
@@ -9,6 +11,8 @@ interface SpellSectionProps {
 }
 
 export function SpellSection({ spells, swapped, onSwap, onPush }: SpellSectionProps) {
+  const [hoveredSpell, setHoveredSpell] = useState<number | null>(null)
+
   if (spells.length === 0) return null
 
   const displaySpells = swapped ? [spells[1], spells[0]] : spells
@@ -17,27 +21,24 @@ export function SpellSection({ spells, swapped, onSwap, onPush }: SpellSectionPr
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
         <span className="text-[10px] text-lol-light/50 uppercase tracking-wider">Spells</span>
-        <div className="flex items-center gap-0.5">
+        <TiltedIconRow className="flex items-center gap-0.5">
           {/* First spell (D) */}
-          <div className="relative group">
-            <div className="relative">
-              {displaySpells[0]?.icon ? (
-                <img
-                  src={displaySpells[0].icon}
-                  alt={displaySpells[0].name}
-                  className="w-7 h-7 rounded border border-lol-gold/20"
-                />
-              ) : (
-                <div className="w-7 h-7 rounded bg-lol-gray border border-lol-gold/20 flex items-center justify-center text-[8px] text-lol-light">
-                  {displaySpells[0]?.name.slice(0, 2)}
-                </div>
-              )}
+          <AnimatedIcon
+            src={displaySpells[0]?.icon ?? ''}
+            alt={displaySpells[0]?.name ?? ''}
+            name={displaySpells[0]?.name ?? ''}
+            description={displaySpells[0]?.description}
+            size="sm"
+            rounded="sm"
+            borderColor="border-lol-gold/20"
+            iconId={0}
+            hoveredId={hoveredSpell}
+            onHoverStart={() => setHoveredSpell(0)}
+            onHoverEnd={() => setHoveredSpell(null)}
+            badge={
               <span className="absolute -bottom-0.5 -right-0.5 bg-lol-dark text-[7px] text-lol-light/60 px-0.5 rounded font-bold">D</span>
-            </div>
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-lol-dark border border-lol-gold/30 rounded text-[10px] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition pointer-events-none z-10">
-              {displaySpells[0]?.name}
-            </div>
-          </div>
+            }
+          />
 
           {/* Swap button */}
           <button
@@ -49,26 +50,23 @@ export function SpellSection({ spells, swapped, onSwap, onPush }: SpellSectionPr
           </button>
 
           {/* Second spell (F) */}
-          <div className="relative group">
-            <div className="relative">
-              {displaySpells[1]?.icon ? (
-                <img
-                  src={displaySpells[1].icon}
-                  alt={displaySpells[1].name}
-                  className="w-7 h-7 rounded border border-lol-gold/20"
-                />
-              ) : (
-                <div className="w-7 h-7 rounded bg-lol-gray border border-lol-gold/20 flex items-center justify-center text-[8px] text-lol-light">
-                  {displaySpells[1]?.name.slice(0, 2)}
-                </div>
-              )}
+          <AnimatedIcon
+            src={displaySpells[1]?.icon ?? ''}
+            alt={displaySpells[1]?.name ?? ''}
+            name={displaySpells[1]?.name ?? ''}
+            description={displaySpells[1]?.description}
+            size="sm"
+            rounded="sm"
+            borderColor="border-lol-gold/20"
+            iconId={1}
+            hoveredId={hoveredSpell}
+            onHoverStart={() => setHoveredSpell(1)}
+            onHoverEnd={() => setHoveredSpell(null)}
+            badge={
               <span className="absolute -bottom-0.5 -right-0.5 bg-lol-dark text-[7px] text-lol-light/60 px-0.5 rounded font-bold">F</span>
-            </div>
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-lol-dark border border-lol-gold/30 rounded text-[10px] text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition pointer-events-none z-10">
-              {displaySpells[1]?.name}
-            </div>
-          </div>
-        </div>
+            }
+          />
+        </TiltedIconRow>
       </div>
 
       <NeonButton onClick={onPush} variant="red" size="sm" className="text-lol-red text-[10px] font-semibold">

@@ -10,18 +10,21 @@ export interface RuneInfo {
   id: number
   name: string
   icon: string
+  description: string
 }
 
 export interface ItemInfo {
   id: number
   name: string
   icon: string
+  description: string
 }
 
 export interface SpellInfo {
   id: number
   name: string
   icon: string
+  description: string
 }
 
 export interface AbilityData {
