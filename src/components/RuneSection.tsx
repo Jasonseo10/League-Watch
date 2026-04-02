@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BuildData } from '../types'
 import { NeonButton } from './ui/neon-button'
+import { AnimatedIcon, TiltedIconRow } from './ui/animated-icon'
 
 interface RuneSectionProps {
   runes: BuildData['runes']
@@ -17,6 +18,10 @@ const SKILL_COLORS: Record<string, string> = {
 
 export function RuneSection({ runes, skills, onPush }: RuneSectionProps) {
   const [showLevelOrder, setShowLevelOrder] = useState(false)
+  const [hoveredKeystone, setHoveredKeystone] = useState<number | null>(null)
+  const [hoveredPrimary, setHoveredPrimary] = useState<number | null>(null)
+  const [hoveredSub, setHoveredSub] = useState<number | null>(null)
+  const [hoveredShard, setHoveredShard] = useState<number | null>(null)
 
   return (
     <div className="space-y-3">
@@ -30,32 +35,49 @@ export function RuneSection({ runes, skills, onPush }: RuneSectionProps) {
         </div>
 
         {/* Keystone */}
-        <div className="flex items-center gap-2 mb-2">
-          {runes.keystone.icon && (
-            <img
-              src={runes.keystone.icon}
-              alt={runes.keystone.name}
-              className="w-10 h-10 rounded-full border-2 border-lol-gold/50"
-            />
-          )}
-          <span className="text-white text-sm font-medium">{runes.keystone.name}</span>
-        </div>
+        <TiltedIconRow  className="flex items-center gap-2 mb-2">
+          <AnimatedIcon
+            src={runes.keystone.icon}
+            alt={runes.keystone.name}
+            name={runes.keystone.name}
+            description={runes.keystone.description}
+            size="lg"
+            rounded="full"
+            borderColor="border-2 border-lol-gold/50"
+            iconId={0}
+            hoveredId={hoveredKeystone}
+            onHoverStart={() => setHoveredKeystone(0)}
+            onHoverEnd={() => setHoveredKeystone(null)}
+            label={
+              <span className="text-white text-sm font-medium mt-1">{runes.keystone.name}</span>
+            }
+          />
+        </TiltedIconRow>
 
         {/* Primary Perks */}
-        <div className="flex gap-2">
+        <TiltedIconRow  className="flex gap-2">
           {runes.primaryPerks.map((perk, i) => (
-            <div key={i} className="flex flex-col items-center gap-1">
-              {perk.icon ? (
-                <img src={perk.icon} alt={perk.name} className="w-7 h-7 rounded-full border border-lol-gold/20" />
-              ) : (
-                <div className="w-7 h-7 rounded-full bg-lol-gray border border-lol-gold/20" />
-              )}
-              <span className="text-[9px] text-lol-light text-center leading-tight max-w-[50px] truncate">
-                {perk.name}
-              </span>
-            </div>
+            <AnimatedIcon
+              key={i}
+              src={perk.icon}
+              alt={perk.name}
+              name={perk.name}
+              description={perk.description}
+              size="sm"
+              rounded="full"
+              borderColor="border-lol-gold/20"
+              iconId={i}
+              hoveredId={hoveredPrimary}
+              onHoverStart={() => setHoveredPrimary(i)}
+              onHoverEnd={() => setHoveredPrimary(null)}
+              label={
+                <span className="text-[9px] text-lol-light text-center leading-tight max-w-[50px] truncate mt-1">
+                  {perk.name}
+                </span>
+              }
+            />
           ))}
-        </div>
+        </TiltedIconRow>
       </div>
 
       {/* Secondary Tree */}
@@ -67,20 +89,29 @@ export function RuneSection({ runes, skills, onPush }: RuneSectionProps) {
           <span className="text-lol-light/50 text-[10px]">Secondary</span>
         </div>
 
-        <div className="flex gap-2">
+        <TiltedIconRow  className="flex gap-2">
           {runes.subPerks.map((perk, i) => (
-            <div key={i} className="flex flex-col items-center gap-1">
-              {perk.icon ? (
-                <img src={perk.icon} alt={perk.name} className="w-7 h-7 rounded-full border border-lol-blue/20" />
-              ) : (
-                <div className="w-7 h-7 rounded-full bg-lol-gray border border-lol-blue/20" />
-              )}
-              <span className="text-[9px] text-lol-light text-center leading-tight max-w-[50px] truncate">
-                {perk.name}
-              </span>
-            </div>
+            <AnimatedIcon
+              key={i}
+              src={perk.icon}
+              alt={perk.name}
+              name={perk.name}
+              description={perk.description}
+              size="sm"
+              rounded="full"
+              borderColor="border-lol-blue/20"
+              iconId={i}
+              hoveredId={hoveredSub}
+              onHoverStart={() => setHoveredSub(i)}
+              onHoverEnd={() => setHoveredSub(null)}
+              label={
+                <span className="text-[9px] text-lol-light text-center leading-tight max-w-[50px] truncate mt-1">
+                  {perk.name}
+                </span>
+              }
+            />
           ))}
-        </div>
+        </TiltedIconRow>
       </div>
 
       {/* Stat Shards */}
@@ -91,20 +122,29 @@ export function RuneSection({ runes, skills, onPush }: RuneSectionProps) {
               Stat Shards
             </h3>
           </div>
-          <div className="flex gap-2">
+          <TiltedIconRow  className="flex gap-2">
             {runes.statShards.map((shard, i) => (
-              <div key={i} className="flex flex-col items-center gap-1">
-                {shard.icon ? (
-                  <img src={shard.icon} alt={shard.name} className="w-7 h-7 rounded-full border border-lol-light/20" />
-                ) : (
-                  <div className="w-7 h-7 rounded-full bg-lol-gray border border-lol-light/20" />
-                )}
-                <span className="text-[9px] text-lol-light text-center leading-tight max-w-[50px] truncate">
-                  {shard.name}
-                </span>
-              </div>
+              <AnimatedIcon
+                key={i}
+                src={shard.icon}
+                alt={shard.name}
+                name={shard.name}
+                description={shard.description}
+                size="sm"
+                rounded="full"
+                borderColor="border-lol-light/20"
+                iconId={i}
+                hoveredId={hoveredShard}
+                onHoverStart={() => setHoveredShard(i)}
+                onHoverEnd={() => setHoveredShard(null)}
+                  label={
+                  <span className="text-[9px] text-lol-light text-center leading-tight max-w-[50px] truncate mt-1">
+                    {shard.name}
+                  </span>
+                }
+              />
             ))}
-          </div>
+          </TiltedIconRow>
         </div>
       )}
 

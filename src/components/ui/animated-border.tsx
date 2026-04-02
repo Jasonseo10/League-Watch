@@ -14,7 +14,7 @@ export function AnimatedBorder({ children, className = '' }: AnimatedBorderProps
   useEffect(() => {
     const animateBorder = () => {
       const now = Date.now() / 1000
-      const speed = 0.5
+      const speed = 0.3
 
       const topX = Math.sin(now * speed) * 100
       const rightY = Math.cos(now * speed) * 100

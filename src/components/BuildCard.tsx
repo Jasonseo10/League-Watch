@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { BuildData, ChampionInfo, ChampionAbilities, RankOption } from '../types'
 import { RuneSection } from './RuneSection'
 import { ItemSection } from './ItemSection'
@@ -9,6 +10,8 @@ import { Dock, DockIcon } from './ui/dock'
 import { Menu, MenuItem } from './ui/fluid-menu'
 import { cn } from '../lib/utils'
 import { GlowingTooltip } from './ui/glowing-tooltip'
+
+const TOOLTIP_PADDING = 8
 
 /** Convert DDragon version (e.g. "16.6.1") to display patch (e.g. "26.6") */
 function toDisplayPatch(ddragonVersion: string): string {
@@ -162,56 +165,14 @@ export function BuildCard({
         <div className="flex items-center px-2 py-1.5 border-b border-lol-gold/10 bg-lol-gray/20">
           <ul className="flex items-center rounded-xl border border-lol-gold/10 bg-gradient-to-t from-lol-dark to-lol-gray/50 p-1">
             {[abilities.passive, ...abilities.spells].map((ability, i) => (
-              <li
+              <AbilityIcon
                 key={i}
-                className="dock-icon group/ability relative flex cursor-pointer items-center justify-center px-[2px]"
-                style={{
-                  '--icon-size': '32px',
-                  width: '32px',
-                  height: '32px',
-                  transition: 'width 150ms cubic-bezier(0.25, 1, 0.5, 1), height 150ms cubic-bezier(0.25, 1, 0.5, 1), margin-top 150ms cubic-bezier(0.25, 1, 0.5, 1)',
-                } as React.CSSProperties}
-                onMouseEnter={() => setHoveredAbility(i)}
-                onMouseLeave={() => setHoveredAbility(null)}
-              >
-                <div className={cn(
-                  "relative aspect-square w-full rounded-[10px] border p-0.5 transition-colors",
-                  "border-lol-light/20 bg-gradient-to-t from-lol-gray to-lol-dark hover:border-lol-gold/40 hover:from-lol-gold/10 hover:to-lol-dark"
-                )}>
-                  {/* Ability name tooltip (like DockIcon) */}
-                  <span className="absolute top-[-32px] left-1/2 -translate-x-1/2 rounded-md border border-lol-gold/30 bg-lol-dark px-2 py-0.5 text-[10px] whitespace-nowrap text-lol-light opacity-0 transition-opacity duration-200 group-hover/ability:opacity-100 z-50 pointer-events-none">
-                    {ability.name}
-                  </span>
-                  <img
-                    src={ability.icon}
-                    alt={ability.name}
-                    className={cn(
-                      'h-full w-full object-contain',
-                      i === 0 ? 'rounded-full' : 'rounded-[inherit]'
-                    )}
-                  />
-                  <span className="absolute -bottom-0.5 -right-0.5 text-[8px] font-bold bg-lol-dark/90 text-lol-light/70 px-0.5 rounded">
-                    {ability.key}
-                  </span>
-                </div>
-
-                {/* Rich hover tooltip (description) — anchored to right */}
-                {hoveredAbility === i && (
-                  <GlowingTooltip className="absolute z-50 top-full left-0 mt-2 w-60 pointer-events-none">
-                    <div className="p-2.5">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <img src={ability.icon} alt={ability.name} className="w-6 h-6 rounded" />
-                        <span className="text-white text-xs font-semibold">{ability.name}</span>
-                        <span className="text-lol-gold/60 text-[10px]">{ability.key}</span>
-                      </div>
-                      <p
-                        className="text-[10px] text-lol-light/80 leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: ability.description }}
-                      />
-                    </div>
-                  </GlowingTooltip>
-                )}
-              </li>
+                ability={ability}
+                index={i}
+                isHovered={hoveredAbility === i}
+                onHover={() => setHoveredAbility(i)}
+                onLeave={() => setHoveredAbility(null)}
+              />
             ))}
           </ul>
         </div>
@@ -324,5 +285,115 @@ export function BuildCard({
         </span>
       </div>
     </div>
+  )
+}
+
+/** Ability icon with portal tooltip that clamps to window edges */
+function AbilityIcon({
+  ability,
+  index,
+  isHovered,
+  onHover,
+  onLeave,
+}: {
+  ability: { key: string; name: string; description: string; icon: string }
+  index: number
+  isHovered: boolean
+  onHover: () => void
+  onLeave: () => void
+}) {
+  const liRef = useRef<HTMLLIElement>(null)
+  const tooltipRef = useRef<HTMLDivElement>(null)
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number } | null>(null)
+
+  useEffect(() => {
+    if (!isHovered || !liRef.current) {
+      setTooltipPos(null)
+      return
+    }
+
+    const id = requestAnimationFrame(() => {
+      const iconRect = liRef.current!.getBoundingClientRect()
+      const winW = document.documentElement.clientWidth
+      const tooltipEl = tooltipRef.current
+      const tooltipW = tooltipEl ? tooltipEl.offsetWidth : 200
+
+      const centerX = iconRect.left + iconRect.width / 2
+      let left = centerX - tooltipW / 2
+
+      if (left < TOOLTIP_PADDING) left = TOOLTIP_PADDING
+      if (left + tooltipW > winW - TOOLTIP_PADDING) left = winW - tooltipW - TOOLTIP_PADDING
+
+      setTooltipPos({
+        left,
+        top: iconRect.bottom + 6,
+      })
+    })
+
+    return () => cancelAnimationFrame(id)
+  }, [isHovered])
+
+  return (
+    <li
+      ref={liRef}
+      className="dock-icon group/ability relative flex cursor-pointer items-center justify-center px-[2px]"
+      style={{
+        '--icon-size': '32px',
+        width: '32px',
+        height: '32px',
+        transition: 'width 150ms cubic-bezier(0.25, 1, 0.5, 1), height 150ms cubic-bezier(0.25, 1, 0.5, 1), margin-top 150ms cubic-bezier(0.25, 1, 0.5, 1)',
+      } as React.CSSProperties}
+      onMouseEnter={onHover}
+      onMouseLeave={onLeave}
+    >
+      <div className={cn(
+        "relative aspect-square w-full rounded-[10px] border p-0.5 transition-colors",
+        "border-lol-light/20 bg-gradient-to-t from-lol-gray to-lol-dark hover:border-lol-gold/40 hover:from-lol-gold/10 hover:to-lol-dark"
+      )}>
+        {/* Ability name tooltip (like DockIcon) */}
+        <span className="absolute top-[-32px] left-1/2 -translate-x-1/2 rounded-md border border-lol-gold/30 bg-lol-dark px-2 py-0.5 text-[10px] whitespace-nowrap text-lol-light opacity-0 transition-opacity duration-200 group-hover/ability:opacity-100 z-50 pointer-events-none">
+          {ability.name}
+        </span>
+        <img
+          src={ability.icon}
+          alt={ability.name}
+          className={cn(
+            'h-full w-full object-contain',
+            index === 0 ? 'rounded-full' : 'rounded-[inherit]'
+          )}
+        />
+        <span className="absolute -bottom-0.5 -right-0.5 text-[8px] font-bold bg-lol-dark/90 text-lol-light/70 px-0.5 rounded">
+          {ability.key}
+        </span>
+      </div>
+
+      {/* Portal tooltip — escapes overflow clipping, clamped to window edges */}
+      {isHovered && createPortal(
+        <div
+          ref={tooltipRef}
+          className="fixed z-[9999] pointer-events-none"
+          style={{
+            left: tooltipPos?.left ?? -9999,
+            top: tooltipPos?.top ?? -9999,
+            maxWidth: `calc(100vw - ${TOOLTIP_PADDING * 2}px)`,
+          }}
+        >
+          <GlowingTooltip className="w-52 max-w-full">
+            <div className="p-2">
+              <div className="flex items-center gap-1.5 mb-1">
+                <img src={ability.icon} alt={ability.name} className="w-5 h-5 shrink-0 rounded" />
+                <span className="text-white text-[11px] font-semibold">{ability.name}</span>
+                <span className="text-lol-gold/60 text-[10px]">{ability.key}</span>
+              </div>
+              <p
+                className="text-[9px] text-lol-light/80 leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: ability.description }}
+              />
+            </div>
+          </GlowingTooltip>
+        </div>,
+        document.body
+      )}
+    </li>
   )
 }

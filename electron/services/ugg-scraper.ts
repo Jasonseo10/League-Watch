@@ -42,18 +42,21 @@ export interface RuneInfo {
   id: number
   name: string
   icon: string
+  description: string
 }
 
 export interface ItemInfo {
   id: number
   name: string
   icon: string
+  description: string
 }
 
 export interface SpellInfo {
   id: number
   name: string
   icon: string
+  description: string
 }
 
 export interface AllRoleBuilds {
@@ -338,7 +341,7 @@ export class UGGScraper {
 
     const statShards = shardIds.map(id => {
       const shard = this.ddragon.getStatShard(id)
-      return { id, name: shard?.name ?? `Shard ${id}`, icon: shard?.icon ?? '' }
+      return { id, name: shard?.name ?? `Shard ${id}`, icon: shard?.icon ?? '', description: shard?.description ?? '' }
     })
 
     const runes: BuildData['runes'] = {
@@ -421,6 +424,7 @@ export class UGGScraper {
           id,
           name: spell.name,
           icon: this.ddragon.getAssetUrl('spell', spell.image.full),
+          description: spell.description || '',
         } : null
       })
       .filter(Boolean) as SpellInfo[]
@@ -446,6 +450,7 @@ export class UGGScraper {
       id,
       name:  rune?.name ?? 'Unknown',
       icon:  rune ? this.ddragon.getAssetUrl('rune', rune.icon) : '',
+      description: rune?.description ?? '',
     }
   }
 
@@ -456,6 +461,7 @@ export class UGGScraper {
       id,
       name: item.name,
       icon: this.ddragon.getAssetUrl('item', `${id}`),
+      description: item.plaintext || item.description || '',
     }
   }
 
@@ -680,7 +686,7 @@ export class UGGScraper {
         primaryTreeId: 0,
         subTree:       '',
         subTreeId:     0,
-        keystone:    { id: 0, name: 'N/A', icon: '' },
+        keystone:    { id: 0, name: 'N/A', icon: '', description: '' },
         primaryPerks:  [],
         subPerks:      [],
         statShards:    [],
