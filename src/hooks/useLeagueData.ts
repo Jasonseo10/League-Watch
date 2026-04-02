@@ -66,8 +66,12 @@ export function useLeagueData() {
     })
 
     api.onChampSelectEnded(() => {
-      // Keep builds visible during loading screen and in-game.
-      // They will be replaced when a new champ select starts.
+      // Clear champion state so the tier list is shown again.
+      setChampion(null)
+      setBuildsByRole(null)
+      setAvailableRoles([])
+      setSelectedRole('')
+      setAbilities(null)
       setIsLoading(false)
       setError(null)
     })
