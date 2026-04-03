@@ -143,7 +143,7 @@ function createOverlayWindow(): BrowserWindow {
     skipTaskbar: true,
     hasShadow: false,
     movable: true,
-    focusable: false, // Prevent stealing focus from the game
+    focusable: true, // Must be true for buttons to receive clicks in packaged app
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.cjs'),
       contextIsolation: true,
