@@ -34,4 +34,5 @@ contextBridge.exposeInMainWorld('leagueWatch', {
   getQueueOptions: () => ipcRenderer.invoke('ugg:get-queue-options'),
   getRegionOptions: () => ipcRenderer.invoke('ugg:get-region-options'),
   setWindowWidth: (width) => ipcRenderer.invoke('window:set-width', width),
+  quitApp: () => ipcRenderer.invoke('app:quit'),
 });

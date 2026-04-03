@@ -143,6 +143,14 @@ function App() {
 
   return (
     <AnimatedBorder className="w-full h-full rounded-xl bg-lol-dark/95 backdrop-blur-md">
+      {/* Quit button — always visible top-right */}
+      <button
+        onClick={() => window.leagueWatch?.quitApp()}
+        className="absolute top-1.5 right-1.5 z-50 w-5 h-5 flex items-center justify-center rounded-full text-lol-light/30 hover:text-lol-red hover:bg-lol-red/10 transition-all duration-150 text-[11px] leading-none"
+        title="Quit League Watch"
+      >
+        ✕
+      </button>
       {content}
     </AnimatedBorder>
   )

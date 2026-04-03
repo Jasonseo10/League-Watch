@@ -154,6 +154,7 @@ declare global {
       getQueueOptions: () => Promise<QueueOption[]>
       getRegionOptions: () => Promise<RegionOption[]>
       setWindowWidth: (width: number) => Promise<void>
+      quitApp: () => Promise<void>
     }
   }
 }

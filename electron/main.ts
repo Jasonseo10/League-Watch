@@ -223,8 +223,20 @@ function startOverlayKeepAlive() {
 }
 
 function createTray() {
-  // Minimal 1x1 transparent icon — no asset file needed
-  const icon = nativeImage.createEmpty()
+  // Simple 16x16 gold "LW" icon drawn as raw RGBA pixels
+  const size = 16
+  const buf = Buffer.alloc(size * size * 4)
+  for (let i = 0; i < size * size; i++) {
+    const x = i % size
+    const y = Math.floor(i / size)
+    // Gold background
+    const isGold = x > 1 && x < 14 && y > 1 && y < 14
+    buf[i * 4 + 0] = isGold ? 200 : 0   // R
+    buf[i * 4 + 1] = isGold ? 155 : 0   // G
+    buf[i * 4 + 2] = isGold ? 60  : 0   // B
+    buf[i * 4 + 3] = isGold ? 255 : 0   // A
+  }
+  const icon = nativeImage.createFromBuffer(buf, { width: size, height: size })
   tray = new Tray(icon)
   tray.setToolTip('League Watch')
 
@@ -428,6 +440,10 @@ function setupIPC() {
 
   ipcMain.handle('ugg:get-region-options', () => {
     return REGION_OPTIONS.map(r => ({ label: r.label, code: r.code }))
+  })
+
+  ipcMain.handle('app:quit', () => {
+    app.exit(0)
   })
 
   // Resize overlay width while keeping the right edge anchored to screen
