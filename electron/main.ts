@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, screen, Tray, Menu, nativeImage } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { execSync } from 'child_process'
@@ -79,7 +79,14 @@ function findLockfilePath(): string {
   return commonPaths[0]
 }
 
+// Single instance lock — prevent duplicate processes
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+}
+
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
 let lcuConnection: LCUConnection
 let lcuWebSocket: LCUWebSocket | null = null
 let lcuApi: LCUApi | null = null
@@ -213,6 +220,52 @@ function startOverlayKeepAlive() {
       mainWindow.setAlwaysOnTop(true, 'screen-saver')
     }
   }, 3000)
+}
+
+function createTray() {
+  // Minimal 1x1 transparent icon — no asset file needed
+  const icon = nativeImage.createEmpty()
+  tray = new Tray(icon)
+  tray.setToolTip('League Watch')
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show / Hide  (Ctrl+L)',
+      click: () => {
+        if (!mainWindow) return
+        if (isOverlayVisible) {
+          mainWindow.hide()
+          isOverlayVisible = false
+        } else {
+          mainWindow.showInactive()
+          isOverlayVisible = true
+        }
+        mainWindow.webContents.send('overlay:visibility-changed', isOverlayVisible)
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit League Watch',
+      click: () => {
+        app.exit(0)
+      },
+    },
+  ])
+
+  tray.setContextMenu(contextMenu)
+
+  // Left-click tray icon also toggles visibility
+  tray.on('click', () => {
+    if (!mainWindow) return
+    if (isOverlayVisible) {
+      mainWindow.hide()
+      isOverlayVisible = false
+    } else {
+      mainWindow.showInactive()
+      isOverlayVisible = true
+    }
+    mainWindow.webContents.send('overlay:visibility-changed', isOverlayVisible)
+  })
 }
 
 async function initializeServices() {
@@ -389,10 +442,19 @@ function setupIPC() {
   })
 }
 
+// If a second instance is launched, just show the existing window
+app.on('second-instance', () => {
+  if (mainWindow) {
+    mainWindow.showInactive()
+    isOverlayVisible = true
+  }
+})
+
 app.whenReady().then(async () => {
   await initializeServices()
 
   mainWindow = createOverlayWindow()
+  createTray()
   registerHotkeys()
   setupIPC()
   startOverlayKeepAlive()
@@ -412,5 +474,8 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   if (lcuWebSocket) {
     lcuWebSocket.disconnect()
+  }
+  if (tray) {
+    tray.destroy()
   }
 })
