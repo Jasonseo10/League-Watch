@@ -66,7 +66,7 @@ function App() {
       return (
         <div className="w-full h-full flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-lol-gold/15 flex-shrink-0" style={dragStyle}>
+          <div className="flex items-center justify-between px-3 pr-6 py-2 border-b border-lol-gold/15 flex-shrink-0" style={dragStyle}>
             <div>
               <h1 className="text-lol-gold text-sm font-bold tracking-wide leading-none">LEAGUE WATCH</h1>
               <p className="text-lol-light/50 text-[10px] mt-0.5">Patch {toDisplayPatch(ddragonVersion)}</p>
